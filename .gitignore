@@ -11,3 +11,10 @@ venv/
 data/*.db
 *.log
 .DS_Store
+
+# Staticfiles & Uploads
+staticfiles/
+patches/*
+!patches/.gitkeep
+releases/*
+!releases/.gitkeep

@@ -1,20 +1,19 @@
+{% load static %}
 <!DOCTYPE html>
 <html dir="rtl" lang="fa">
 <head>
   <meta charset="utf-8">
   <meta content="width=device-width, initial-scale=1.0" name="viewport">
   <title>فلاتر او‌تی‌ای | سامانه مدیریت انتشار و رول‌بک پچ‌های فلاتر (Flutter OTA Hub)</title>
-  <!-- Fast Persian Typography & Icons (JSDelivr Multi-CDN with Instant System Fallback) -->
-  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/rastikerdar/vazirmatn@v33.003/misc/Farsi-Digits/Vazirmatn-FD-font-face.css">
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/material-symbols@0.14.4/outlined.css">
+  <!-- Offline Local Persian Fonts & Icons (Zero External Dependency, 0ms Load Time) -->
+  <link rel="stylesheet" href="{% static 'ota/css/fonts.css' %}">
 
   <!-- Production Pre-compiled High-Performance CSS (Zero Runtime Overhead, 0ms Load Time) -->
   <style>
     /* Base font settings & fallbacks */
     * { box-sizing: border-box; }
     body {
-      font-family: 'Vazirmatn', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Tahoma, 'IRANSans', sans-serif;
+      font-family: 'IRANYekanX', 'IRANSans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Tahoma, sans-serif;
       background-color: #f8fafc;
       color: #0f172a;
       margin: 0;
@@ -78,12 +77,18 @@
         <span class="text-[10px] text-slate-400 font-bold uppercase tracking-wider block mb-2">برنامه فعال (Workspace)</span>
         <button onclick="openAppModal()" class="w-full flex items-center justify-between p-2.5 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-200/80 text-right transition-all group">
           <div class="flex items-center gap-2.5 truncate">
-            <div class="w-8 h-8 rounded-lg overflow-hidden shrink-0 shadow-xs border border-slate-200 flex items-center justify-center" id="sidebar-app-avatar" style="width: 32px; height: 32px; min-width: 32px; min-height: 32px;">
-              <img src="static/ota/images/quran_icon.jpg" alt="آیکون قرآن تفکر" class="app-icon-img" style="width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit;">
+            <div class="w-8 h-8 rounded-lg overflow-hidden shrink-0 shadow-xs border border-slate-200 flex items-center justify-center bg-blue-600 text-white font-black text-xs" id="sidebar-app-avatar" style="width: 32px; height: 32px; min-width: 32px; min-height: 32px;">
+              {% if current_app.icon %}
+                <img src="{{ current_app.icon.url }}" alt="{{ current_app.name }}" class="app-icon-img" style="width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit;">
+              {% elif current_app %}
+                {{ current_app.name|slice:":2" }}
+              {% else %}
+                <span class="material-symbols-outlined text-[18px]">apps</span>
+              {% endif %}
             </div>
             <div class="flex flex-col truncate text-right">
-              <span class="text-xs font-bold text-slate-900 truncate" id="sidebar-app-name">{{ current_app.name|default:"قرآن تفکر" }}</span>
-              <span class="text-[10px] text-slate-400 font-mono truncate" dir="ltr" id="sidebar-app-pkg">{{ current_app.package_name|default:"ir.tafakormag.quran" }}</span>
+              <span class="text-xs font-bold text-slate-900 truncate" id="sidebar-app-name">{{ current_app.name|default:"برنامه‌ای ثبت نشده" }}</span>
+              <span class="text-[10px] text-slate-400 font-mono truncate" dir="ltr" id="sidebar-app-pkg">{{ current_app.package_name|default:"-" }}</span>
             </div>
           </div>
           <span class="material-symbols-outlined text-slate-400 group-hover:text-blue-600 text-[18px]">unfold_more</span>
@@ -104,6 +109,10 @@
           </button>
           <button onclick="switchView('rollback')" data-view="rollback" class="nav-link flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-all text-xs font-semibold text-right w-full">
             <span class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[19px]">history</span>تاریخچه و رول‌بک</span>
+            <span class="material-symbols-outlined text-[16px]">chevron_left</span>
+          </button>
+          <button onclick="switchView('releases')" data-view="releases" class="nav-link flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-all text-xs font-semibold text-right w-full">
+            <span class="flex items-center gap-2.5"><span class="material-symbols-outlined text-[19px]">android</span>انتشار و مدیریت APK</span>
             <span class="material-symbols-outlined text-[16px]">chevron_left</span>
           </button>
           <button onclick="switchView('apps')" data-view="apps" class="nav-link flex items-center justify-between px-3 py-2.5 rounded-xl text-slate-600 hover:bg-slate-100 hover:text-slate-900 transition-all text-xs font-semibold text-right w-full">
@@ -145,7 +154,7 @@
         <!-- Active App Indicator & Switcher Button -->
         <button onclick="openAppModal()" class="flex items-center gap-2 px-3 py-1.5 bg-slate-50 hover:bg-slate-100 border border-slate-200/80 rounded-xl text-xs font-bold text-slate-700 transition-colors">
           <span class="w-2 h-2 rounded-full bg-emerald-600"></span>
-          <span id="header-app-name">{{ current_app.name|default:"قرآن تفکر" }}</span>
+          <span id="header-app-name">{{ current_app.name|default:"برنامه‌ای ثبت نشده" }}</span>
           <span class="material-symbols-outlined text-slate-400 text-[16px]">expand_more</span>
         </button>
 
@@ -162,18 +171,24 @@
       <!-- Multi-App Workspace Context Ribbon -->
       <div class="w-full bg-white border border-slate-200/80 rounded-2xl p-4 sm:p-5 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
         <div class="flex items-center gap-3.5 flex-wrap">
-          <div class="w-11 h-11 rounded-xl overflow-hidden shrink-0 shadow-xs border border-slate-200 ring-2 ring-emerald-100 flex items-center justify-center" id="active-app-avatar" style="width: 44px; height: 44px; min-width: 44px; min-height: 44px;">
-            <img src="static/ota/images/quran_icon.jpg" alt="{{ current_app.name|default:'قرآن تفکر' }}" class="app-icon-img" style="width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit;">
+          <div class="w-11 h-11 rounded-xl overflow-hidden shrink-0 shadow-xs border border-slate-200 ring-2 ring-emerald-100 flex items-center justify-center bg-blue-600 text-white font-black text-sm" id="active-app-avatar" style="width: 44px; height: 44px; min-width: 44px; min-height: 44px;">
+            {% if current_app.icon %}
+              <img src="{{ current_app.icon.url }}" alt="{{ current_app.name }}" class="app-icon-img" style="width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit;">
+            {% elif current_app %}
+              {{ current_app.name|slice:":2" }}
+            {% else %}
+              <span class="material-symbols-outlined text-[24px]">apps</span>
+            {% endif %}
           </div>
           <div class="flex flex-col justify-center">
             <div class="flex items-center gap-2">
-              <span class="text-sm font-extrabold text-slate-900" id="ribbon-app-name">{{ current_app.name|default:"قرآن تفکر" }}</span>
-              <span class="text-xs font-mono text-slate-400 font-normal" dir="ltr" id="ribbon-app-pkg">({{ current_app.package_name|default:"ir.tafakormag.quran" }})</span>
+              <span class="text-sm font-extrabold text-slate-900" id="ribbon-app-name">{{ current_app.name|default:"برنامه‌ای ثبت نشده است" }}</span>
+              <span class="text-xs font-mono text-slate-400 font-normal" dir="ltr" id="ribbon-app-pkg">{% if current_app %}({{ current_app.package_name }}){% endif %}</span>
             </div>
             <div class="flex items-center gap-3 mt-1 flex-wrap text-xs text-slate-500">
               <div class="flex items-center gap-1">
                 <span>شناسه:</span>
-                <span class="font-mono text-blue-600 font-bold" dir="ltr" id="ribbon-app-id">{{ current_app.app_id|default:"quran_app" }}</span>
+                <span class="font-mono text-blue-600 font-bold" dir="ltr" id="ribbon-app-id">{{ current_app.app_id|default:"-" }}</span>
               </div>
               <span class="w-1 h-1 rounded-full bg-slate-300"></span>
               <div class="flex items-center gap-1">
@@ -184,6 +199,11 @@
               <div class="flex items-center gap-1">
                 <span>پچ‌های ثبت‌شده:</span>
                 <span class="font-bold text-slate-800" id="ribbon-total-patches">{{ current_app.total_patches|default:0 }} نسخه</span>
+              </div>
+              <span class="w-1 h-1 rounded-full bg-slate-300"></span>
+              <div class="flex items-center gap-1">
+                <span>ریلیزهای APK:</span>
+                <span class="font-bold text-slate-800" id="ribbon-total-releases">{{ current_app.total_releases|default:0 }} نسخه</span>
               </div>
             </div>
           </div>
@@ -266,7 +286,7 @@
             </div>
             <div class="pt-4 mt-3 border-t border-slate-100 flex items-center justify-between">
               <span class="text-xs text-slate-500">تست کلاینت:</span>
-              <a href="/check?app_id={{ current_app.app_id|default:'quran_app' }}" id="stat-test-link" target="_blank" class="text-xs text-blue-600 hover:underline font-mono font-bold">/check?app_id={{ current_app.app_id|default:'quran_app' }} ↗</a>
+              <a href="{% if current_app %}/check?app_id={{ current_app.app_id }}{% else %}#{% endif %}" id="stat-test-link" target="_blank" class="text-xs text-blue-600 hover:underline font-mono font-bold">{% if current_app %}/check?app_id={{ current_app.app_id }} ↗{% else %}-{% endif %}</a>
             </div>
           </div>
 
@@ -458,6 +478,141 @@
         </div>
       </div>
 
+      <!-- ==================== VIEW 5: NATIVE APK RELEASES ==================== -->
+      <div id="view-releases" class="view-tab hidden space-y-6">
+        <!-- Top Informational Callout -->
+        <div class="bg-gradient-to-r from-slate-900 to-blue-950 text-white rounded-2xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div class="flex items-start gap-3.5">
+            <div class="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center shrink-0 border border-blue-400/30">
+              <span class="material-symbols-outlined text-[24px]">android</span>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="text-sm font-extrabold text-white">مدیریت و انتشار ریلیزهای نصبی نیتیو (Full APK Releases)</h3>
+                <span class="text-[10px] bg-blue-500/20 text-blue-300 border border-blue-400/30 px-2 py-0.5 rounded-full font-mono">Hybrid Architecture</span>
+              </div>
+              <p class="text-xs text-slate-300 mt-1 leading-relaxed">
+                هنگامی که تغییراتی در کد کاتلین/سوئیفت، پلاگین‌های نیتیو، پرمیشن‌ها یا بیلد گریدل داده‌اید، پچ دارت پاسخگو نخواهد بود. فایل کامل APK را در این بخش بارگذاری فرمایید. کلاینت فلاتر هنگام بررسی آپدیت، ابتدا کد بیلد را تطبیق داده و در صورت نیاز، کاربر را مستقیماً به دانلود و نصب APK هدایت خواهد کرد.
+              </p>
+            </div>
+          </div>
+          <div class="shrink-0 flex items-center gap-2">
+            <span class="text-xs bg-white/10 px-3 py-1.5 rounded-lg font-mono border border-white/20 text-blue-200">update_type: "native"</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <!-- Form: Upload New APK (1 col) -->
+          <div class="lg:col-span-1 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+            <div>
+              <div class="pb-3 mb-4 border-b border-slate-100">
+                <h2 class="text-sm text-slate-900 font-extrabold flex items-center gap-2">
+                  <span class="material-symbols-outlined text-blue-600 text-[20px]">upload_file</span>
+                  <span>بارگذاری و انتشار APK جدید</span>
+                </h2>
+                <p class="text-xs text-slate-500 mt-0.5">ثبت بیلد نصبی کامل با شماره ساخت بالاتر</p>
+              </div>
+
+              <!-- Drag & Drop Zone for APK -->
+              <div class="bg-slate-50 hover:bg-slate-100/80 transition-all border-2 border-dashed border-slate-300 rounded-xl p-5 flex flex-col items-center justify-center text-center cursor-pointer mb-4" id="apk-drop-zone" onclick="document.getElementById('real-apk-file-input').click()">
+                <input type="file" id="real-apk-file-input" class="hidden" accept=".apk" onchange="handleApkFileChange(this.files)">
+                <div class="w-10 h-10 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-2">
+                  <span class="material-symbols-outlined text-[22px]">android</span>
+                </div>
+                <span class="text-xs text-slate-800 font-bold">انتخاب فایل نصبی (.apk)</span>
+                <span class="text-[11px] text-slate-400 mt-1">فایل app-release.apk تولید شده توسط Flutter</span>
+                <div class="mt-2.5 flex items-center gap-2" id="selected-apk-badge" style="display: none;">
+                  <span class="font-mono text-xs bg-blue-50 border border-blue-200 text-blue-700 px-2.5 py-1 rounded-md font-bold truncate max-w-[150px]" dir="ltr" id="selected-apk-name">app.apk</span>
+                  <span class="text-xs text-slate-500 font-semibold" id="selected-apk-size">۰ MB</span>
+                </div>
+              </div>
+
+              <div class="space-y-3.5">
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">نام نسخه (Version Name) *</label>
+                  <input type="text" id="input-release-vername" placeholder="مثال: 1.1.0 یا 2.0.0" dir="ltr" class="w-full h-9 px-3 bg-white text-slate-900 font-mono text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500 font-bold">
+                  <span class="text-[10px] text-slate-400 mt-0.5 block">معادل versionName در گریدل یا pubspec</span>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">کد ساخت بیلد (Version Code / Build Number) *</label>
+                  <input type="number" id="input-release-vercode" placeholder="مثال: 2" min="1" dir="ltr" class="w-full h-9 px-3 bg-white text-slate-900 font-mono text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500 font-bold">
+                  <span class="text-[10px] text-amber-600 mt-0.5 block">الزام: باید حتماً از کدهای بیلد قبلی بزرگتر باشد</span>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">سیاست دریافت آپدیت</label>
+                  <select id="select-release-policy" class="w-full h-9 px-3 bg-white text-slate-900 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500 font-semibold">
+                    <option value="optional" selected>اختیاری (پیشنهاد آپدیت به کاربر)</option>
+                    <option value="force">اجباری (مسدودسازی تا زمان دانلود و نصب APK)</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label class="flex items-center gap-2 cursor-pointer select-none text-xs text-slate-700 font-bold pt-1">
+                    <input type="checkbox" id="auto-deploy-release" checked class="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer">
+                    <span>فعال‌سازی فوری به عنوان نسخه زنده (Live Deploy)</span>
+                  </label>
+                </div>
+
+                <div>
+                  <label class="block text-xs font-bold text-slate-700 mb-1">یادداشت تغییرات نسخه (Release Notes)</label>
+                  <textarea id="textarea-release-notes" rows="2" placeholder="توضیحات ویژگی‌های جدید یا دلایل به‌روزرسانی نیتیو..." class="w-full px-3 py-1.5 bg-slate-50 text-slate-900 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500 focus:bg-white transition-all leading-relaxed"></textarea>
+                </div>
+              </div>
+            </div>
+
+            <div class="pt-4 mt-4 border-t border-slate-100 flex items-center justify-between">
+              <span class="text-[11px] text-slate-400 font-mono">MD5 & SHA256 خودکار</span>
+              <button type="button" id="btn-deploy-release" onclick="uploadRelease()" class="h-9 px-5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-xs font-bold transition-all shadow-xs flex items-center gap-1.5">
+                <span class="material-symbols-outlined text-[17px]">publish</span>
+                <span>بارگذاری و انتشار APK</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Table: Existing Releases (2 cols) -->
+          <div class="lg:col-span-2 bg-white border border-slate-200/80 rounded-2xl p-5 shadow-xs flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between pb-3 mb-4 border-b border-slate-100 flex-wrap gap-2">
+                <div>
+                  <h2 class="text-sm text-slate-900 font-extrabold flex items-center gap-2">
+                    <span class="material-symbols-outlined text-blue-600 text-[20px]">format_list_bulleted</span>
+                    <span>ماتریس ریلیزهای نصبی APK</span>
+                  </h2>
+                  <p class="text-xs text-slate-500 mt-0.5">لیست تمام فایل‌های APK ذخیره‌شده و آماده دانلود مستقیم</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button class="h-8 px-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 flex items-center gap-1" onclick="loadReleases()">
+                    <span class="material-symbols-outlined text-[15px]">refresh</span>
+                    <span>به‌روزرسانی</span>
+                  </button>
+                  <span class="text-xs bg-slate-100 text-slate-700 border border-slate-200 px-2.5 py-1 rounded-full font-medium" id="table-release-count">۰ نسخه</span>
+                </div>
+              </div>
+
+              <div class="w-full overflow-x-auto">
+                <table class="w-full text-right border-collapse text-xs">
+                  <thead>
+                    <tr class="bg-slate-50 text-slate-600 border-b border-slate-100">
+                      <th class="py-2.5 px-3 font-bold">نسخه و بیلد</th>
+                      <th class="py-2.5 px-3 font-bold text-center">سیاست دریافت</th>
+                      <th class="py-2.5 px-3 font-bold text-center">حجم و دانلودها</th>
+                      <th class="py-2.5 px-3 font-bold">تاریخ ثبت</th>
+                      <th class="py-2.5 px-3 font-bold text-center">عملیات و فایل</th>
+                    </tr>
+                  </thead>
+                  <tbody id="releases-table-body" class="divide-y divide-slate-100">
+                    <!-- Rendered via JS -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+
       <!-- ==================== VIEW 4: APPS MANAGEMENT ==================== -->
       <div id="view-apps" class="view-tab hidden space-y-6">
         <div class="w-full bg-white border border-slate-200/80 rounded-2xl p-6 shadow-xs">
@@ -511,17 +666,34 @@
         </button>
       </div>
       <form class="flex flex-col gap-3.5" onsubmit="submitNewApp(event)">
+        <!-- App Icon Picker -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs text-slate-800 font-bold">تصویر / لوگوی برنامه (اختیاری)</label>
+          <div class="flex items-center gap-3">
+            <div id="new-app-icon-preview" class="w-12 h-12 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
+              <span class="material-symbols-outlined text-slate-400 text-[24px]">image</span>
+            </div>
+            <div class="flex-1">
+              <input type="file" id="input-new-app-icon" accept="image/*" class="hidden" onchange="handleNewAppIconSelect(this)">
+              <button type="button" onclick="document.getElementById('input-new-app-icon').click()" class="h-8 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg border border-slate-200 flex items-center gap-1.5 transition-colors">
+                <span class="material-symbols-outlined text-[16px]">upload</span>
+                <span>انتخاب تصویر...</span>
+              </button>
+              <span class="text-[10px] text-slate-400 block mt-1">فرمت‌های PNG، JPG، WebP، SVG</span>
+            </div>
+          </div>
+        </div>
         <div class="flex flex-col gap-1">
           <label class="text-xs text-slate-800 font-bold">شناسه برنامه (App ID) *</label>
-          <input class="w-full px-3 py-2 bg-slate-50 text-slate-900 text-xs font-mono rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500" dir="ltr" id="input-new-app-id" placeholder="مثال: quran_app" required type="text">
+          <input class="w-full px-3 py-2 bg-slate-50 text-slate-900 text-xs font-mono rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500" dir="ltr" id="input-new-app-id" placeholder="مثال: my_app" required type="text">
         </div>
         <div class="flex flex-col gap-1">
           <label class="text-xs text-slate-800 font-bold">نام نمایشی برنامه *</label>
-          <input class="w-full px-3 py-2 bg-slate-50 text-slate-900 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500" id="input-new-app-name" placeholder="مثال: اپلیکیشن قرآن" required type="text">
+          <input class="w-full px-3 py-2 bg-slate-50 text-slate-900 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500" id="input-new-app-name" placeholder="مثال: اپلیکیشن من" required type="text">
         </div>
         <div class="flex flex-col gap-1">
           <label class="text-xs text-slate-800 font-bold">Package Name / Bundle ID *</label>
-          <input class="w-full px-3 py-2 bg-slate-50 text-slate-900 text-xs font-mono rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500" dir="ltr" id="input-new-app-pkg" placeholder="ir.tafakormag.quran" required type="text">
+          <input class="w-full px-3 py-2 bg-slate-50 text-slate-900 text-xs font-mono rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500" dir="ltr" id="input-new-app-pkg" placeholder="مثال: com.example.myapp" required type="text">
         </div>
         <div class="flex flex-col gap-1">
           <label class="text-xs text-slate-800 font-bold">توضیحات کوتاه</label>
@@ -536,10 +708,45 @@
   </div>
 
   <!-- Core JavaScript -->
+
+  <!-- Modal: Edit App -->
+  <div class="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center hidden" id="edit-app-modal">
+    <div class="bg-white rounded-2xl border border-slate-200 p-6 w-full max-w-md shadow-2xl text-right">
+      <div class="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
+        <span class="text-base text-slate-900 font-extrabold flex items-center gap-2">
+          <span class="material-symbols-outlined text-blue-600 text-[20px]">edit</span>
+          <span>ویرایش مشخصات برنامه</span>
+        </span>
+        <button class="text-slate-400 hover:text-slate-700" onclick="closeEditAppModal()" type="button">
+          <span class="material-symbols-outlined text-[20px]">close</span>
+        </button>
+      </div>
+      <form class="flex flex-col gap-3.5" onsubmit="submitEditApp(event)">
+        <input type="hidden" id="input-edit-app-id">
+        <div class="flex flex-col gap-1">
+          <label class="text-xs text-slate-800 font-bold">نام نمایشی برنامه *</label>
+          <input class="w-full px-3 py-2 bg-slate-50 text-slate-900 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500" id="input-edit-app-name" required type="text">
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs text-slate-800 font-bold">Package Name / Bundle ID *</label>
+          <input class="w-full px-3 py-2 bg-slate-50 text-slate-900 text-xs font-mono rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500" dir="ltr" id="input-edit-app-pkg" required type="text">
+        </div>
+        <div class="flex flex-col gap-1">
+          <label class="text-xs text-slate-800 font-bold">توضیحات کوتاه</label>
+          <input class="w-full px-3 py-2 bg-slate-50 text-slate-900 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500" id="input-edit-app-desc" type="text">
+        </div>
+        <div class="flex justify-end gap-2 mt-2">
+          <button class="px-4 py-2 bg-slate-100 text-slate-600 hover:bg-slate-200 rounded-lg text-xs font-semibold" onclick="closeEditAppModal()" type="button">انصراف</button>
+          <button class="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold shadow-xs" type="submit">ذخیره تغییرات</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
   <script>
     const BASE_PATH = window.location.pathname.startsWith('/patcher') ? '/patcher' : '';
 
-    let currentAppId = '{{ current_app.app_id|default:"quran_app" }}';
+    let currentAppId = '{{ current_app.app_id|default:"" }}';
     let appsList = [];
     let selectedFile = null;
     let allPatchesData = [];
@@ -548,6 +755,7 @@
       dashboard: { title: 'داشبورد و وضعیت زنده', icon: 'dashboard', pageTitle: 'داشبورد و وضعیت زنده' },
       publisher: { title: 'انتشار پچ جدید فلاتر', icon: 'cloud_upload', pageTitle: 'انتشار پچ جدید' },
       rollback: { title: 'تاریخچه نسخه‌ها و رول‌بک', icon: 'history', pageTitle: 'تاریخچه و رول‌بک' },
+      releases: { title: 'انتشار و مدیریت ریلیزهای APK', icon: 'android', pageTitle: 'مدیریت ریلیزهای APK' },
       apps: { title: 'مدیریت اپلیکیشن‌ها', icon: 'apps', pageTitle: 'مدیریت اپلیکیشن‌ها' }
     };
 
@@ -603,6 +811,8 @@
       // 8. Refresh view-specific contents
       if (viewName === 'rollback') {
         loadPatches();
+      } else if (viewName === 'releases') {
+        if(typeof loadReleases === 'function') loadReleases();
       } else if (viewName === 'apps') {
         renderAppsCards();
       }
@@ -718,7 +928,7 @@
 
     function resolveAppIcon(app) {
       if (!app) return '';
-      let icon = app.icon_url || (app.app_id === 'quran_app' ? '/static/ota/images/quran_icon.jpg' : '');
+      let icon = app.icon_url || '';
       if (icon && icon.startsWith('/') && BASE_PATH) {
         icon = BASE_PATH + icon;
       }
@@ -726,8 +936,31 @@
     }
 
     function renderCurrentAppBanner() {
-      const app = appsList.find(a => a.app_id === currentAppId) || appsList[0];
-      if (!app) return;
+      const app = appsList.find(a => a.app_id === currentAppId) || (appsList.length > 0 ? appsList[0] : null);
+      if (!app) {
+        const hName = document.getElementById('header-app-name');
+        if (hName) hName.textContent = 'برنامه‌ای ثبت نشده';
+        const rName = document.getElementById('ribbon-app-name');
+        if (rName) rName.textContent = 'هیچ برنامه‌ای ثبت نشده است';
+        const rPkg = document.getElementById('ribbon-app-pkg');
+        if (rPkg) rPkg.textContent = '';
+        const rId = document.getElementById('ribbon-app-id');
+        if (rId) rId.textContent = '-';
+        const sName = document.getElementById('sidebar-app-name');
+        if (sName) sName.textContent = 'برنامه‌ای ثبت نشده';
+        const sPkg = document.getElementById('sidebar-app-pkg');
+        if (sPkg) sPkg.textContent = '-';
+        const testLink = document.getElementById('stat-test-link');
+        if (testLink) {
+          testLink.href = '#';
+          testLink.textContent = '-';
+        }
+        const ribbonAvatar = document.getElementById('active-app-avatar');
+        if (ribbonAvatar) ribbonAvatar.innerHTML = '<span class="material-symbols-outlined text-[24px] text-slate-400">apps</span>';
+        const sAvatar = document.getElementById('sidebar-app-avatar');
+        if (sAvatar) sAvatar.innerHTML = '<span class="material-symbols-outlined text-[18px] text-slate-400">apps</span>';
+        return;
+      }
 
       const iconSrc = resolveAppIcon(app);
       document.getElementById('header-app-name').textContent = app.name;
@@ -885,6 +1118,15 @@
 
     async function loadPatches() {
       const tbody = document.getElementById('patches-table-body');
+      if (!currentAppId) {
+        if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-slate-400">ابتدا یک برنامه ثبت یا انتخاب کنید.</td></tr>';
+        renderDashboardRecentTable([]);
+        const countEl = document.getElementById('table-patch-count');
+        if (countEl) countEl.textContent = '0 نسخه ثبت‌شده';
+        const statCount = document.getElementById('stat-patch-count');
+        if (statCount) statCount.textContent = 0;
+        return;
+      }
       if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-slate-400">در حال بارگذاری نسخه‌ها...</td></tr>';
 
       try {
@@ -940,6 +1182,10 @@
     }
 
     async function uploadPatch() {
+      if (!currentAppId) {
+        showToast('لطفاً ابتدا یک برنامه ثبت یا انتخاب کنید.', 'error');
+        return;
+      }
       if (!selectedFile) {
         showToast('لطفاً ابتدا فایل پچ (.zip یا .bundle) را انتخاب فرمایید.', 'error');
         return;
@@ -1053,11 +1299,21 @@
     function renderAppsCards() {
       const grid = document.getElementById('apps-cards-grid');
       if (!grid) return;
+      const addCardHtml = `
+        <div onclick="openNewAppModal()" class="border-2 border-dashed border-slate-200 hover:border-blue-500 rounded-2xl p-6 flex flex-col items-center justify-center text-center cursor-pointer transition-all min-h-[220px]">
+          <div class="w-14 h-14 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-3">
+            <span class="material-symbols-outlined text-[28px]">add</span>
+          </div>
+          <span class="text-sm font-bold text-slate-800">ثبت برنامه جدید</span>
+          <span class="text-xs text-slate-400 mt-1">اتصال پروژه فلاتر دیگر</span>
+        </div>
+      `;
       if (!appsList || appsList.length === 0) {
-        grid.innerHTML = '<div class="col-span-full text-center py-8 text-slate-400">هیچ برنامه‌ای یافت نشد.</div>';
+        grid.innerHTML = addCardHtml;
         return;
       }
-      grid.innerHTML = appsList.map(a => {
+      
+      const cardsHtml = appsList.map(a => {
         const isCurrent = a.app_id === currentAppId;
         const activeVerText = a.active_version ? `v${a.active_version}` : 'بدون پچ فعال';
         const activeVerClass = a.active_version ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-slate-100 text-slate-600 border-slate-200';
@@ -1066,7 +1322,8 @@
         const avatarHtml = iconSrc 
           ? `<div class="w-11 h-11 rounded-xl overflow-hidden shrink-0 shadow-xs border border-slate-200 flex items-center justify-center" style="width: 44px; height: 44px; min-width: 44px; min-height: 44px;"><img src="${iconSrc}" alt="${a.name}" class="app-icon-img" style="width: 100%; height: 100%; object-fit: cover; display: block; border-radius: inherit;"></div>`
           : `<div class="w-11 h-11 rounded-xl bg-blue-600 text-white font-black flex items-center justify-center text-sm shadow-xs shrink-0" style="width: 44px; height: 44px; min-width: 44px; min-height: 44px;">${a.name.substring(0, 2)}</div>`;
-
+        const encodedApp = encodeURIComponent(JSON.stringify(a));
+        
         return `
           <div class="bg-white rounded-2xl p-5 ${cardBorder} flex flex-col justify-between transition-all">
             <div>
@@ -1078,7 +1335,15 @@
                     <span class="text-[11px] font-mono text-slate-400 block" dir="ltr">${a.package_name}</span>
                   </div>
                 </div>
-                ${isCurrent ? '<span class="text-[10px] bg-emerald-600 text-white font-extrabold px-2.5 py-0.5 rounded-full">برنامه فعال</span>' : ''}
+                <div class="flex items-center gap-1">
+                  ${isCurrent ? '<span class="text-[10px] bg-emerald-600 text-white font-extrabold px-2.5 py-0.5 rounded-full mr-1">برنامه فعال</span>' : ''}
+                  <button class="h-6 w-6 flex items-center justify-center text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded" onclick="openEditAppModal(decodeURIComponent('${encodedApp}'))" title="ویرایش">
+                    <span class="material-symbols-outlined text-[15px]">edit</span>
+                  </button>
+                  <button class="h-6 w-6 flex items-center justify-center text-slate-400 hover:text-red-600 hover:bg-red-50 rounded" onclick="deleteApp('${a.app_id}', '${a.name}')" title="حذف">
+                    <span class="material-symbols-outlined text-[15px]">delete</span>
+                  </button>
+                </div>
               </div>
 
               <div class="text-xs text-slate-600 mb-4 leading-relaxed">${a.description || 'بدون توضیحات ثبت‌شده'}</div>
@@ -1116,12 +1381,18 @@
           </div>
         `;
       }).join('');
+      grid.innerHTML = cardsHtml + addCardHtml;
     }
 
     // Modal Handlers
     function openAppModal() {
       const modal = document.getElementById('app-switcher-modal');
       const list = document.getElementById('modal-apps-list');
+      if (!appsList || appsList.length === 0) {
+        list.innerHTML = '<div class="text-center py-6 text-slate-400 text-xs">هیچ برنامه‌ای ثبت نشده است. از دکمه زیر می‌توانید برنامه جدید اضافه کنید.</div>';
+        modal.classList.remove('hidden');
+        return;
+      }
       list.innerHTML = appsList.map(a => {
         const isCurrent = a.app_id === currentAppId;
         const border = isCurrent ? "border-emerald-500 bg-emerald-50/50" : "border-slate-200 hover:bg-slate-50";
@@ -1159,6 +1430,7 @@
       closeAppModal();
       renderCurrentAppBanner();
       loadPatches();
+      if (typeof loadReleases === 'function') loadReleases();
       renderAppsCards();
       showToast(`برنامه فعال به ${appId} تغییر یافت.`, 'info');
     }
@@ -1171,12 +1443,24 @@
       document.getElementById('new-app-modal').classList.add('hidden');
     }
 
+    function handleNewAppIconSelect(input) {
+      if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+          document.getElementById('new-app-icon-preview').innerHTML = `<img src="${e.target.result}" class="w-full h-full object-cover">`;
+        }
+        reader.readAsDataURL(input.files[0]);
+      }
+    }
+
     async function submitNewApp(e) {
       e.preventDefault();
       const appId = document.getElementById('input-new-app-id').value.trim();
       const name = document.getElementById('input-new-app-name').value.trim();
       const pkg = document.getElementById('input-new-app-pkg').value.trim();
       const desc = document.getElementById('input-new-app-desc').value.trim();
+      const iconInput = document.getElementById('input-new-app-icon');
+      const iconFile = iconInput.files && iconInput.files[0];
 
       if (!appId || !name || !pkg) {
         showToast('لطفاً فیلدهای الزامی را پر کنید.', 'error');
@@ -1184,25 +1468,331 @@
       }
 
       try {
+        const formData = new FormData();
+        formData.append('app_id', appId);
+        formData.append('name', name);
+        formData.append('package_name', pkg);
+        formData.append('description', desc);
+        if (iconFile) {
+          formData.append('icon', iconFile);
+        }
+
         const res = await fetch(`${BASE_PATH}/api/apps`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ app_id: appId, name: name, package_name: pkg, description: desc })
+          body: formData
         });
         const data = await res.json();
         if (data.ok) {
           showToast(`برنامه ${name} با موفقیت افزوده شد.`, 'success');
           closeNewAppModal();
           currentAppId = appId;
+          document.getElementById('input-new-app-id').value = '';
+          document.getElementById('input-new-app-name').value = '';
+          document.getElementById('input-new-app-pkg').value = '';
+          document.getElementById('input-new-app-desc').value = '';
+          document.getElementById('input-new-app-icon').value = '';
+          document.getElementById('new-app-icon-preview').innerHTML = '<span class="material-symbols-outlined text-slate-400 text-[24px]">image</span>';
           await loadApps();
+          renderCurrentAppBanner();
           switchView('apps');
         } else {
-          showToast('خطا: ' + data.error, 'error');
+          showToast('خطا: ' + (data.error || 'ناشناخته'), 'error');
         }
       } catch (e) {
         showToast('خطا در ثبت برنامه: ' + e, 'error');
       }
     }
+
+    function openEditAppModal(appStr) {
+      const app = JSON.parse(appStr);
+      document.getElementById('input-edit-app-id').value = app.app_id;
+      document.getElementById('input-edit-app-name').value = app.name;
+      document.getElementById('input-edit-app-pkg').value = app.package_name;
+      document.getElementById('input-edit-app-desc').value = app.description || '';
+      document.getElementById('edit-app-modal').classList.remove('hidden');
+    }
+
+    function closeEditAppModal() {
+      document.getElementById('edit-app-modal').classList.add('hidden');
+    }
+
+    async function submitEditApp(e) {
+      e.preventDefault();
+      const appId = document.getElementById('input-edit-app-id').value;
+      const name = document.getElementById('input-edit-app-name').value.trim();
+      const pkg = document.getElementById('input-edit-app-pkg').value.trim();
+      const desc = document.getElementById('input-edit-app-desc').value.trim();
+
+      try {
+        const res = await fetch(`${BASE_PATH}/api/apps`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_id: appId, name, package_name: pkg, description: desc })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('تغییرات برنامه با موفقیت ذخیره شد.', 'success');
+          closeEditAppModal();
+          await loadApps();
+          if(currentAppId === appId) renderCurrentAppBanner();
+        } else {
+          showToast('خطا: ' + data.error, 'error');
+        }
+      } catch (e) {
+        showToast('خطا در ذخیره تغییرات.', 'error');
+      }
+    }
+
+    async function deleteApp(appId, appName) {
+      if (!confirm(`آیا از حذف دائمی برنامه «${appName || appId}» اطمینان دارید؟\nتمام پچ‌ها و فایل‌های APK متعلق به این برنامه نیز برای همیشه از سرور پاک خواهند شد!`)) return;
+      try {
+        const res = await fetch(`${BASE_PATH}/api/apps/delete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_id: appId })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast(`برنامه ${appName || appId} با موفقیت حذف گردید.`, 'info');
+          if (currentAppId === appId) {
+            currentAppId = '';
+          }
+          await loadApps();
+        } else {
+          showToast('خطا در حذف برنامه: ' + (data.error || 'ناشناخته'), 'error');
+        }
+      } catch (e) {
+        showToast('خطای شبکه در هنگام حذف برنامه: ' + e, 'error');
+      }
+    }
+
+    async function loadReleases() {
+      if (!currentAppId) return;
+      try {
+        const res = await fetch(`${BASE_PATH}/api/releases?app_id=${currentAppId}`);
+        const data = await res.json();
+        allReleasesData = data.releases || [];
+        
+        const tbody = document.getElementById('releases-table-body');
+        if (!tbody) return;
+        
+        document.getElementById('table-release-count').textContent = allReleasesData.length + ' نسخه';
+        
+        if (allReleasesData.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-slate-400">هیچ فایل APK برای این برنامه ثبت نشده است.</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = allReleasesData.map(r => {
+          const isActive = r.is_active;
+          const bgClass = isActive ? 'bg-blue-50/50' : 'hover:bg-slate-50/80';
+          const badgeHtml = isActive 
+            ? '<span class="text-[10px] bg-blue-600 text-white px-2 py-0.5 rounded font-bold">فعال (زنده)</span>'
+            : '<span class="text-[10px] bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-bold">غیرفعال</span>';
+          
+          return `
+            <tr class="${bgClass} transition-colors">
+              <td class="py-3 px-3">
+                <div class="flex flex-col">
+                  <span class="font-bold text-slate-900 font-mono text-sm" dir="ltr">v${r.version_name}</span>
+                  <span class="text-[10px] text-slate-400 font-mono" dir="ltr">build ${r.version_code}</span>
+                </div>
+              </td>
+              <td class="py-3 px-3 text-center">
+                ${badgeHtml}
+              </td>
+              <td class="py-3 px-3 text-center text-xs">
+                <div class="flex flex-col items-center gap-1">
+                  <span class="font-bold text-slate-700" dir="ltr">${r.formatted_size}</span>
+                  <span class="text-[10px] text-slate-400 flex items-center gap-0.5"><span class="material-symbols-outlined text-[12px]">download</span>${r.download_count} دانلود</span>
+                </div>
+              </td>
+              <td class="py-3 px-3">
+                <div class="flex flex-col">
+                  <span class="text-[11px] text-slate-500 font-mono" dir="ltr">${r.created_at}</span>
+                  <span class="text-[10px] text-slate-400 truncate max-w-[120px]" title="${r.release_notes || 'بدون یادداشت'}">${r.release_notes || '-'}</span>
+                </div>
+              </td>
+              <td class="py-3 px-3 text-center">
+                <div class="flex items-center justify-center gap-1.5">
+                  <a href="${r.download_url}" target="_blank" class="h-7 w-7 bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-600 rounded flex items-center justify-center transition-colors border border-slate-200" title="دانلود APK">
+                    <span class="material-symbols-outlined text-[16px]">download</span>
+                  </a>
+                  ${!isActive ? `
+                  <button onclick="activateRelease(${r.id})" class="h-7 px-2 bg-white hover:bg-blue-50 text-slate-600 hover:text-blue-600 rounded flex items-center gap-1 transition-colors border border-slate-200" title="انتخاب به عنوان نسخه فعال">
+                    <span class="material-symbols-outlined text-[16px]">task_alt</span>
+                    <span class="text-[10px] font-bold">فعال‌سازی</span>
+                  </button>
+                  ` : ''}
+                  <button onclick="deleteRelease(${r.id})" class="h-7 w-7 bg-white hover:bg-red-50 text-slate-400 hover:text-red-500 rounded flex items-center justify-center transition-colors border border-slate-200" title="حذف دائم">
+                    <span class="material-symbols-outlined text-[16px]">delete</span>
+                  </button>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+      } catch(e) {
+        console.error('loadReleases error:', e);
+      }
+    }
+
+    async function activateRelease(releaseId) {
+      if(!confirm('آیا مطمئن هستید که می‌خواهید این فایل APK را به عنوان نسخه زنده (فعال) برای کاربران تنظیم کنید؟')) return;
+      try {
+        const res = await fetch(`${BASE_PATH}/api/releases/${releaseId}/activate`, { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('نسخه APK با موفقیت فعال شد.', 'success');
+          await loadReleases();
+        } else {
+          showToast('خطا: ' + data.error, 'error');
+        }
+      } catch(e) {
+        showToast('خطای شبکه', 'error');
+      }
+    }
+
+    async function deleteRelease(releaseId) {
+      if(!confirm('آیا از حذف این فایل APK اطمینان دارید؟')) return;
+      try {
+        const res = await fetch(`${BASE_PATH}/api/releases/${releaseId}/delete`, { method: 'POST' });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('فایل APK حذف شد.', 'info');
+          await loadReleases();
+        } else {
+          showToast('خطا: ' + data.error, 'error');
+        }
+      } catch(e) {
+        showToast('خطای شبکه', 'error');
+      }
+    }
+
+
+    let selectedApkFile = null;
+
+    function handleReleaseFileSelect(input) {
+      if (input.files && input.files[0]) {
+        selectedApkFile = input.files[0];
+        const badge = document.getElementById('selected-apk-badge');
+        document.getElementById('selected-apk-name').textContent = selectedApkFile.name;
+        document.getElementById('selected-apk-size').textContent = (selectedApkFile.size / (1024 * 1024)).toFixed(2) + ' مگابایت';
+        badge.style.display = 'flex';
+      }
+    }
+
+    function setupReleaseDragDrop() {
+      const dropZone = document.getElementById('apk-drop-zone');
+      const input = document.getElementById('input-release-apk');
+      if (!dropZone || !input) return;
+
+      ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, preventDefaults, false);
+      });
+      function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
+      
+      ['dragenter', 'dragover'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => dropZone.classList.add('border-blue-500', 'bg-blue-50'), false);
+      });
+      ['dragleave', 'drop'].forEach(eventName => {
+        dropZone.addEventListener(eventName, () => dropZone.classList.remove('border-blue-500', 'bg-blue-50'), false);
+      });
+
+      dropZone.addEventListener('drop', (e) => {
+        const dt = e.dataTransfer;
+        const files = dt.files;
+        if (files && files.length > 0) {
+          if (files[0].name.endsWith('.apk')) {
+            input.files = files;
+            handleReleaseFileSelect(input);
+          } else {
+            showToast('فقط فایل‌های APK مجاز هستند.', 'error');
+          }
+        }
+      });
+    }
+
+    async function toggleForceRelease(releaseId) {
+      try {
+        const res = await fetch(`${BASE_PATH}/api/releases/toggle_force`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ release_id: releaseId })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast('سیاست نسخه APK به‌روزرسانی شد.', 'info');
+          await loadReleases();
+        }
+      } catch (e) {
+        showToast('خطا: ' + e, 'error');
+      }
+    }
+
+    async function uploadRelease() {
+      if (!currentAppId) {
+        showToast('لطفاً ابتدا یک برنامه ثبت یا انتخاب کنید.', 'error');
+        return;
+      }
+      if (!selectedApkFile) {
+        showToast('لطفاً ابتدا فایل APK (.apk) را انتخاب فرمایید.', 'error');
+        return;
+      }
+      const verName = document.getElementById('input-release-vername').value.trim();
+      const verCode = document.getElementById('input-release-vercode').value.trim();
+      if (!verName || !verCode) {
+        showToast('نام نسخه (Version Name) و کد بیلد (Version Code) هر دو الزامی هستند.', 'error');
+        return;
+      }
+      const isForce = document.getElementById('select-release-policy').value === 'force' ? '1' : '0';
+      const activate = document.getElementById('auto-deploy-release').checked ? '1' : '0';
+      const notes = document.getElementById('textarea-release-notes').value.trim();
+
+      const btn = document.getElementById('btn-deploy-release');
+      const origText = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = '<span class="material-symbols-outlined text-[17px] animate-spin">refresh</span><span>در حال بارگذاری APK و محاسبه هش...</span>';
+
+      try {
+        const formData = new FormData();
+        formData.append('file', selectedApkFile);
+        formData.append('app_id', currentAppId);
+        formData.append('version_name', verName);
+        formData.append('version_code', verCode);
+        formData.append('is_force', isForce);
+        formData.append('activate', activate);
+        formData.append('notes', notes);
+        formData.append('filename', selectedApkFile.name);
+
+        const res = await fetch(`${BASE_PATH}/api/releases/upload`, {
+          method: 'POST',
+          body: formData
+        });
+        const data = await res.json();
+        if (data.ok) {
+          showToast(`نسخه APK v${verName} (بیلد ${verCode}) با موفقیت ثبت شد!`, 'success');
+          document.getElementById('input-release-vername').value = '';
+          document.getElementById('input-release-vercode').value = '';
+          document.getElementById('textarea-release-notes').value = '';
+          selectedApkFile = null;
+          const badge = document.getElementById('selected-apk-badge');
+          if(badge) badge.style.display = 'none';
+          
+          await loadApps();
+          await loadReleases();
+        } else {
+          showToast('خطا در سرور: ' + (data.error || 'ناشناخته'), 'error');
+        }
+      } catch (e) {
+        showToast('خطای شبکه در هنگام آپلود APK: ' + e, 'error');
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = origText;
+      }
+    }
+
   </script>
 </body>
 </html>

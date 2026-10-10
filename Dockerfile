@@ -16,7 +16,7 @@ RUN pip install --no-cache-dir --default-timeout=1000 -r requirements.txt || \
 
 COPY . .
 
-RUN mkdir -p /app/patches /app/data
+RUN mkdir -p /app/patches /app/data /app/releases
 
 EXPOSE 8080
 

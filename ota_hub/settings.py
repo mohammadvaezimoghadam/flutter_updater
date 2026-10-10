@@ -10,6 +10,7 @@ For the full list of settings and their values, see
 https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
+import os
 import sys
 from pathlib import Path
 
@@ -24,12 +25,20 @@ sys.path.insert(0, str(BASE_DIR))
 # See https://docs.djangoproject.com/en/4.2/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-&d+ak@ad-he!a80837mw!vzp0wi615w%jrsppl*#0cz&af8-3d'
+SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-&d+ak@ad-he!a80837mw!vzp0wi615w%jrsppl*#0cz&af8-3d')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 't')
 
-ALLOWED_HOSTS = ['*']
+ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', '*').split(',') if h.strip()]
+
+PORT = int(os.getenv('PORT', '8080'))
+
+# Reverse Proxy / Nginx support
+USE_X_FORWARDED_HOST = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+
+
 
 
 
@@ -85,12 +94,27 @@ WSGI_APPLICATION = 'ota_hub.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/4.2/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'data' / 'patches.db',
+DB_ENGINE = os.getenv('DB_ENGINE', '')
+if DB_ENGINE == 'django.db.backends.postgresql' or os.getenv('POSTGRES_DB'):
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': os.getenv('DB_NAME', os.getenv('POSTGRES_DB', 'flutter_ota_db')),
+            'USER': os.getenv('DB_USER', os.getenv('POSTGRES_USER', 'ota_user')),
+            'PASSWORD': os.getenv('DB_PASSWORD', os.getenv('POSTGRES_PASSWORD', 'ota_secret_123')),
+            'HOST': os.getenv('DB_HOST', 'db'),
+            'PORT': os.getenv('DB_PORT', '5432'),
+            'CONN_MAX_AGE': 600,
+        }
     }
-}
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': BASE_DIR / 'data' / 'patches.db',
+        }
+    }
+
 
 
 # Password validation
@@ -127,12 +151,17 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/4.2/howto/static-files/
 
-STATIC_URL = 'static/'
+STATIC_URL = '/static/'
 STATIC_ROOT = BASE_DIR / 'staticfiles'
 
 # Media / Patch Bundles Storage
 MEDIA_URL = '/patches/'
 MEDIA_ROOT = BASE_DIR / 'patches'
+PATCHES_ROOT = BASE_DIR / 'patches'
+
+# Native Releases / APK Storage
+RELEASES_URL = '/releases/'
+RELEASES_ROOT = BASE_DIR / 'releases'
 
 # Default primary key field type
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field

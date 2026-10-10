@@ -10,9 +10,11 @@ from django.db import transaction
 from django.db.models import Count, Q
 from django.core.files.uploadedfile import UploadedFile
 
-from .models import App, Patch
+from .models import App, Patch, Release
+from .version_utils import validate_new_patch_version, compare_versions
 
 logger = logging.getLogger("ota.services")
+
 
 
 class AppService:
@@ -20,11 +22,12 @@ class AppService:
 
     @staticmethod
     def list_apps_summary() -> List[Dict[str, Any]]:
-        """دریافت لیست اپلیکیشن‌ها به همراه اطلاعات پچ فعال جاری و تعداد کل نسخه‌ها"""
+        """دریافت لیست اپلیکیشن‌ها به همراه اطلاعات پچ فعال جاری، آخرین نسخه نصبی و تعداد کل نسخه‌ها"""
         apps = App.objects.all().order_by('id')
         result = []
         for a in apps:
-            active = a.active_patch
+            active_p = a.active_patch
+            active_r = a.active_release
             result.append({
                 "id": a.id,
                 "app_id": a.app_id,
@@ -34,12 +37,17 @@ class AppService:
                 "description": a.description,
                 "is_active": a.is_active,
                 "total_patches": a.total_patches,
+                "total_releases": a.total_releases,
                 "icon_url": a.icon_url,
-                "active_version": active.version if active else None,
-                "active_is_force": active.is_force if active else False,
+                "active_version": active_p.version if active_p else None,
+                "active_is_force": active_p.is_force if active_p else False,
+                "active_release_version": active_r.version_name if active_r else None,
+                "active_release_code": active_r.version_code if active_r else None,
+                "active_release_is_force": active_r.is_force if active_r else False,
                 "created_at": a.created_at.strftime("%Y-%m-%d %H:%M:%S") if a.created_at else "",
             })
         return result
+
 
     @staticmethod
     def get_app_by_id(app_id: str) -> Optional[App]:
@@ -52,14 +60,15 @@ class AppService:
         package_name: str,
         description: str = "",
         platform: str = "all",
+        icon_file = None,
         extra_metadata: Optional[Dict[str, Any]] = None
     ) -> App:
-        """ثبت اپلیکیشن جدید با اعتبارسنجی یکتایی شناسه"""
+        """ثبت اپلیکیشن جدید با اعتبارسنجی یکتایی شناسه و آپلود اختیاری آیکون"""
         app_id = app_id.strip()
         if App.objects.filter(app_id=app_id).exists():
             raise ValueError(f"اپلیکیشنی با شناسه '{app_id}' قبلاً ثبت شده است.")
 
-        app = App.objects.create(
+        app = App(
             app_id=app_id,
             name=name.strip(),
             package_name=package_name.strip(),
@@ -67,8 +76,74 @@ class AppService:
             platform=platform,
             extra_metadata=extra_metadata or {}
         )
+        if icon_file:
+            app.icon = icon_file
+        app.save()
         logger.info(f"Created new Flutter App: {app.app_id} ({app.name})")
         return app
+
+    @staticmethod
+    def update_app(
+        app_id: str,
+        name: Optional[str] = None,
+        package_name: Optional[str] = None,
+        description: Optional[str] = None,
+        platform: Optional[str] = None,
+        icon_file = None,
+        extra_metadata: Optional[Dict[str, Any]] = None
+    ) -> App:
+        """ویرایش مشخصات اپلیکیشن ثبت‌شده و به‌روزرسانی آیکون"""
+        app = App.objects.filter(app_id=app_id.strip()).first()
+        if not app:
+            raise ValueError(f"اپلیکیشنی با شناسه '{app_id}' یافت نشد.")
+
+        if name is not None and name.strip():
+            app.name = name.strip()
+        if package_name is not None and package_name.strip():
+            app.package_name = package_name.strip()
+        if description is not None:
+            app.description = description.strip()
+        if platform is not None:
+            app.platform = platform
+        if icon_file:
+            app.icon = icon_file
+        if extra_metadata is not None:
+            app.extra_metadata = extra_metadata
+        app.save()
+        logger.info(f"Updated Flutter App: {app.app_id} ({app.name})")
+        return app
+
+    @staticmethod
+    def delete_app(app_id: str) -> bool:
+        """حذف کامل یک اپلیکیشن همراه با تمامی پچ‌ها، ریلیزهای APK و فایل‌های ذخیره شده روی دیسک"""
+        app = App.objects.filter(app_id=app_id.strip()).first()
+        if not app:
+            raise ValueError(f"اپلیکیشنی با شناسه '{app_id}' یافت نشد.")
+
+        # ۱. حذف فیزیکی پوشه پچ‌های این اپلیکیشن
+        patches_root = str(getattr(settings, 'PATCHES_ROOT', getattr(settings, 'MEDIA_ROOT', 'patches')))
+        patch_dir = os.path.join(patches_root, app.app_id)
+        if os.path.exists(patch_dir):
+            try:
+                import shutil
+                shutil.rmtree(patch_dir)
+            except Exception as e:
+                logger.warning(f"Could not remove patch directory {patch_dir}: {e}")
+
+        # ۲. حذف فیزیکی پوشه فایل‌های نصبی APK این اپلیکیشن
+        releases_root = str(getattr(settings, 'RELEASES_ROOT', 'releases'))
+        release_dir = os.path.join(releases_root, app.app_id)
+        if os.path.exists(release_dir):
+            try:
+                import shutil
+                shutil.rmtree(release_dir)
+            except Exception as e:
+                logger.warning(f"Could not remove release directory {release_dir}: {e}")
+
+        app_name = app.name
+        app.delete()
+        logger.info(f"Deleted Flutter App: {app_id} ({app_name}) and all its artifacts.")
+        return True
 
 
 class PatchService:
@@ -95,6 +170,7 @@ class PatchService:
                 "md5": p.md5,
                 "sha256": p.sha256,
                 "release_notes": p.release_notes,
+                "download_count": getattr(p, 'download_count', 0),
                 "created_at": p.created_at.strftime("%Y-%m-%d %H:%M:%S") if p.created_at else "",
             })
         return result
@@ -108,7 +184,9 @@ class PatchService:
         scheme: Optional[str] = None
     ) -> Dict[str, Any]:
         """
-        بررسی استعلام کلاینت فلاتر و ارائه آخرین پچ فعال با ساخت لینک مستقیم دانلود
+        بررسی یکپارچه و هوشمند استعلام کلاینت فلاتر:
+        - اولویت اول: بررسی نیاز به ارتقای نیتیو با فایل نصبی کامل (APK)
+        - اولویت دوم: در صورت به‌روز بودن بیلد نیتیو، بررسی پچ دارت (OTA)
         """
         app = App.objects.filter(Q(app_id=app_id) | Q(package_name=app_id), is_active=True).first()
         if not app:
@@ -117,51 +195,83 @@ class PatchService:
                 "message": f"اپلیکیشن با شناسه یا پکیج '{app_id}' یافت نشد یا غیرفعال است."
             }
 
+        server_host = host or "localhost:8080"
+        url_scheme = scheme or "http"
+
+        client_vc = None
+        if version_code is not None:
+            try:
+                client_vc = int(version_code)
+            except (ValueError, TypeError):
+                pass
+
+        # اولویت ۱: استعلام آپدیت نیتیو (فایل نصبی کامل APK)
+        active_release = app.active_release
+        if active_release and client_vc is not None and client_vc < active_release.version_code:
+            apk_url = f"{url_scheme}://{server_host}/releases/{app.app_id}/{active_release.version_code}/{active_release.filename}"
+            return {
+                "has_update": True,
+                "update_type": "native",
+                "app_id": app.app_id,
+                "version": active_release.version_name,
+                "version_name": active_release.version_name,
+                "version_code": active_release.version_code,
+                "target_version_code": active_release.version_code,
+                "download_url": apk_url,
+                "apk_url": apk_url,
+                "is_force": active_release.is_force,
+                "size_bytes": active_release.size_bytes,
+                "formatted_size": active_release.formatted_size,
+                "md5": active_release.md5,
+                "sha256": active_release.sha256,
+                "release_notes": active_release.release_notes,
+                "created_at": active_release.created_at.strftime("%Y-%m-%d %H:%M:%S") if active_release.created_at else ""
+            }
+
+        # اولویت ۲: استعلام پچ دارت (OTA Hot Update)
         active_patch = app.active_patch
         if not active_patch:
             return {
                 "has_update": False,
-                "message": "هیچ پچ فعالی برای این اپلیکیشن تعریف نشده است (نسخه خام استور)."
+                "message": "کلاینت به آخرین نسخه مجهز است و پچ فعال یا فایل نصبی جدیدی وجود ندارد."
             }
 
-        # بررسی کد بیلد نیتیو تارگت در صورت ارسال
-        if version_code is not None and active_patch.target_version_code:
-            try:
-                vc = int(version_code)
-                if vc != active_patch.target_version_code:
-                    return {
-                        "has_update": False,
-                        "message": f"پچ جاری مخصوص بیلد {active_patch.target_version_code} است (بیلد کلاینت: {vc})."
-                    }
-            except (ValueError, TypeError):
-                pass
+        # بررسی سازگاری شماره ساخت نیتیو با پچ
+        if client_vc is not None and active_patch.target_version_code:
+            if client_vc != active_patch.target_version_code:
+                return {
+                    "has_update": False,
+                    "message": f"پچ جاری مخصوص بیلد نیتیو {active_patch.target_version_code} است (بیلد کلاینت: {client_vc})."
+                }
 
-        # بررسی تطابق با پچ جاری کلاینت
-        if current_patch and str(current_patch).strip() == str(active_patch.version).strip():
-            return {
-                "has_update": False,
-                "message": "کلاینت هم‌اکنون به آخرین نسخه پچ مجهز است.",
-                "current_version": current_patch
-            }
+        # بررسی تطابق با پچ جاری کلاینت بر اساس مقایسه ترتیبی نسخه‌ها
+        if current_patch:
+            curr_clean = str(current_patch).strip()
+            # اگر نسخه کلاینت برابر یا بالاتر از پچ فعال سرور باشد، نیازی به دریافت مجدد نیست
+            if compare_versions(active_patch.version, curr_clean) <= 0:
+                return {
+                    "has_update": False,
+                    "message": "کلاینت هم‌اکنون به آخرین نسخه پچ مجهز است.",
+                    "current_version": curr_clean
+                }
 
-        # ساخت لینک دانلود مطمئن
-        server_host = host or "localhost:8080"
-        url_scheme = scheme or "http"
-        download_url = f"{url_scheme}://{server_host}/patches/{app.app_id}/{active_patch.version}/{active_patch.filename}"
-
+        patch_download_url = f"{url_scheme}://{server_host}/patches/{app.app_id}/{active_patch.version}/{active_patch.filename}"
         return {
             "has_update": True,
+            "update_type": "patch",
             "app_id": app.app_id,
             "version": active_patch.version,
-            "is_force": active_patch.is_force,
             "target_version_code": active_patch.target_version_code,
-            "download_url": download_url,
+            "download_url": patch_download_url,
+            "is_force": active_patch.is_force,
+            "size_bytes": active_patch.size_bytes,
+            "formatted_size": active_patch.formatted_size,
             "md5": active_patch.md5,
             "sha256": active_patch.sha256,
-            "size_bytes": active_patch.size_bytes,
             "release_notes": active_patch.release_notes,
             "created_at": active_patch.created_at.strftime("%Y-%m-%d %H:%M:%S") if active_patch.created_at else ""
         }
+
 
     @staticmethod
     def publish_patch(
@@ -182,6 +292,9 @@ class PatchService:
         version = version.strip()
         if not version:
             raise ValueError("شماره نسخه پچ نمی‌تواند خالی باشد.")
+
+        # اعتبارسنجی بزرگ‌تر بودن نسخه پچ جدید نسبت به نسخه‌های قبلی همین اپلیکیشن
+        validate_new_patch_version(app, version)
 
         with transaction.atomic():
             # در صورت انتشار به عنوان پچ فعال، پچ‌های قبلی همین اپ را آرشیو کن
@@ -291,5 +404,142 @@ class SystemService:
             "port": getattr(settings, "PORT", 8080),
             "ips": ips or ["127.0.0.1"],
             "total_apps": App.objects.count(),
-            "total_patches": Patch.objects.count()
+            "total_patches": Patch.objects.count(),
+            "total_releases": Release.objects.count()
         }
+
+
+class ReleaseService:
+    """لایه سرویس مدیریت نسخه‌های نصبی نیتیو (فایل‌های کامل APK)"""
+
+    @staticmethod
+    def list_releases_for_app(app_id: str) -> List[Dict[str, Any]]:
+        releases = Release.objects.filter(app__app_id=app_id).order_by('-version_code')
+        result = []
+        for r in releases:
+            result.append({
+                "id": r.id,
+                "app_id": r.app.app_id,
+                "version_name": r.version_name,
+                "version_code": r.version_code,
+                "status": r.status,
+                "is_active": 1 if r.is_active else 0,
+                "is_force": 1 if r.is_force else 0,
+                "filename": r.filename,
+                "size_bytes": r.size_bytes,
+                "formatted_size": r.formatted_size,
+                "download_count": r.download_count,
+                "md5": r.md5,
+                "sha256": r.sha256,
+                "release_notes": r.release_notes,
+                "created_at": r.created_at.strftime("%Y-%m-%d %H:%M:%S") if r.created_at else "",
+            })
+        return result
+
+    @staticmethod
+    def publish_release(
+        app_id: str,
+        file_obj: UploadedFile | Any,
+        version_name: str,
+        version_code: int,
+        is_force: bool = False,
+        activate: bool = True,
+        release_notes: str = "",
+        extra_metadata: Optional[Dict[str, Any]] = None
+    ) -> Release:
+        app = App.objects.filter(app_id=app_id).first()
+        if not app:
+            raise ValueError(f"اپلیکیشن '{app_id}' یافت نشد.")
+
+        version_name = version_name.strip()
+        if not version_name:
+            raise ValueError("نام نسخه (version_name) نمی‌تواند خالی باشد.")
+
+        try:
+            vc = int(version_code)
+            if vc <= 0:
+                raise ValueError("کد بیلد نیتیو باید یک عدد مثبت باشد.")
+        except (TypeError, ValueError):
+            raise ValueError("کد بیلد نیتیو (version_code) باید یک عدد معتبر باشد.")
+
+        # اعتبارسنجی بزرگ‌تر بودن version_code نسبت به نسخه‌های قبلی همین اپ
+        existing = Release.objects.filter(app=app)
+        if existing.exists():
+            max_vc = max(r.version_code for r in existing)
+            if vc <= max_vc:
+                raise ValueError(
+                    f"کد بیلد نیتیو جدید ({vc}) باید اکیداً بزرگ‌تر از آخرین نسخه ثبت‌شده ({max_vc}) باشد."
+                )
+
+        with transaction.atomic():
+            if activate:
+                Release.objects.filter(app=app, status='active').update(status='archived')
+
+            release = Release(
+                app=app,
+                version_name=version_name,
+                version_code=vc,
+                status='active' if activate else 'archived',
+                is_force=is_force,
+                release_notes=release_notes.strip(),
+                extra_metadata=extra_metadata or {}
+            )
+            release.file = file_obj
+            release.filename = os.path.basename(file_obj.name) if hasattr(file_obj, 'name') else 'app-release.apk'
+            release.save()
+
+            logger.info(f"Published Native Release #{release.id} (v{version_name}, Build {vc}) for app {app.app_id}.")
+            return release
+
+    @staticmethod
+    def rollback_to_release(app_id: str, release_id: int) -> bool:
+        app = App.objects.filter(app_id=app_id).first()
+        if not app:
+            raise ValueError(f"اپلیکیشن '{app_id}' یافت نشد.")
+
+        if release_id == 0:
+            with transaction.atomic():
+                Release.objects.filter(app=app, status='active').update(status='archived')
+            logger.info(f"Deactivated all native releases for app '{app_id}'.")
+            return True
+
+        release = Release.objects.filter(id=release_id, app=app).first()
+        if not release:
+            raise ValueError(f"نسخه شماره #{release_id} یافت نشد.")
+
+        release.activate_and_rollback()
+        logger.info(f"Activated native release #{release_id} (Build {release.version_code}) for app '{app_id}'.")
+        return True
+
+    @staticmethod
+    def toggle_force_release(release_id: int) -> bool:
+        release = Release.objects.filter(id=release_id).first()
+        if not release:
+            raise ValueError(f"نسخه شماره #{release_id} یافت نشد.")
+
+        release.is_force = not release.is_force
+        release.save(update_fields=['is_force', 'updated_at'])
+        logger.info(f"Toggled force policy for release #{release_id} to {release.is_force}")
+        return release.is_force
+
+    @staticmethod
+    def delete_release(release_id: int) -> bool:
+        release = Release.objects.filter(id=release_id).first()
+        if not release:
+            raise ValueError(f"نسخه شماره #{release_id} یافت نشد.")
+
+        try:
+            if release.file and os.path.exists(release.file.path):
+                file_dir = os.path.dirname(release.file.path)
+                os.remove(release.file.path)
+                if os.path.exists(file_dir) and not os.listdir(file_dir):
+                    os.rmdir(file_dir)
+        except Exception as e:
+            logger.warning(f"Could not remove release file from disk: {e}")
+
+        rel_ver = f"{release.version_name} (Build {release.version_code})"
+        app_id = release.app.app_id
+        release.delete()
+        logger.info(f"Deleted native release #{release_id} ({rel_ver}) for app {app_id}.")
+        return True
+
