@@ -854,6 +854,7 @@
       loadStatus();
       loadApps();
       setupDragDrop();
+      setupReleaseDragDrop();
 
       const initView = resolveInitialView();
       switchView(initView, false);
@@ -1571,7 +1572,7 @@
       try {
         const res = await fetch(`${BASE_PATH}/api/releases?app_id=${currentAppId}`);
         const data = await res.json();
-        allReleasesData = data.releases || [];
+        allReleasesData = Array.isArray(data) ? data : (data.releases || []);
         
         const tbody = document.getElementById('releases-table-body');
         if (!tbody) return;
@@ -1641,7 +1642,11 @@
     async function activateRelease(releaseId) {
       if(!confirm('آیا مطمئن هستید که می‌خواهید این فایل APK را به عنوان نسخه زنده (فعال) برای کاربران تنظیم کنید؟')) return;
       try {
-        const res = await fetch(`${BASE_PATH}/api/releases/${releaseId}/activate`, { method: 'POST' });
+        const res = await fetch(`${BASE_PATH}/api/releases/activate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ app_id: currentAppId, release_id: releaseId })
+        });
         const data = await res.json();
         if (data.ok) {
           showToast('نسخه APK با موفقیت فعال شد.', 'success');
@@ -1657,7 +1662,11 @@
     async function deleteRelease(releaseId) {
       if(!confirm('آیا از حذف این فایل APK اطمینان دارید؟')) return;
       try {
-        const res = await fetch(`${BASE_PATH}/api/releases/${releaseId}/delete`, { method: 'POST' });
+        const res = await fetch(`${BASE_PATH}/api/releases/delete`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ release_id: releaseId })
+        });
         const data = await res.json();
         if (data.ok) {
           showToast('فایل APK حذف شد.', 'info');
@@ -1673,25 +1682,32 @@
 
     let selectedApkFile = null;
 
+    function handleApkFileChange(files) {
+      if (!files || files.length === 0) return;
+      selectedApkFile = files[0];
+      const badge = document.getElementById('selected-apk-badge');
+      const nameEl = document.getElementById('selected-apk-name');
+      const sizeEl = document.getElementById('selected-apk-size');
+      if (nameEl) nameEl.textContent = selectedApkFile.name;
+      if (sizeEl) sizeEl.textContent = `سایز: ${(selectedApkFile.size / (1024 * 1024)).toFixed(2)} مگابایت`;
+      if (badge) badge.style.display = 'flex';
+      showToast(`فایل ${selectedApkFile.name} با موفقیت انتخاب شد.`, 'success');
+    }
+
     function handleReleaseFileSelect(input) {
-      if (input.files && input.files[0]) {
-        selectedApkFile = input.files[0];
-        const badge = document.getElementById('selected-apk-badge');
-        document.getElementById('selected-apk-name').textContent = selectedApkFile.name;
-        document.getElementById('selected-apk-size').textContent = (selectedApkFile.size / (1024 * 1024)).toFixed(2) + ' مگابایت';
-        badge.style.display = 'flex';
+      if (input && input.files) {
+        handleApkFileChange(input.files);
       }
     }
 
     function setupReleaseDragDrop() {
       const dropZone = document.getElementById('apk-drop-zone');
-      const input = document.getElementById('input-release-apk');
+      const input = document.getElementById('real-apk-file-input');
       if (!dropZone || !input) return;
 
       ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
-        dropZone.addEventListener(eventName, preventDefaults, false);
+        dropZone.addEventListener(eventName, (e) => { e.preventDefault(); e.stopPropagation(); }, false);
       });
-      function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
       
       ['dragenter', 'dragover'].forEach(eventName => {
         dropZone.addEventListener(eventName, () => dropZone.classList.add('border-blue-500', 'bg-blue-50'), false);
@@ -1705,10 +1721,9 @@
         const files = dt.files;
         if (files && files.length > 0) {
           if (files[0].name.endsWith('.apk')) {
-            input.files = files;
-            handleReleaseFileSelect(input);
+            handleApkFileChange(files);
           } else {
-            showToast('فقط فایل‌های APK مجاز هستند.', 'error');
+            showToast('فقط فایل‌های APK (.apk) مجاز هستند.', 'error');
           }
         }
       });

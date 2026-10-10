@@ -229,8 +229,21 @@ class PatchService:
             }
 
         # اولویت ۲: استعلام پچ دارت (OTA Hot Update)
-        active_patch = app.active_patch
+        active_patch = None
+        if client_vc is not None:
+            active_patch = app.patches.filter(status='active', target_version_code=client_vc).first()
         if not active_patch:
+            active_patch = app.active_patch
+
+        if not active_patch:
+            # اگر پچ فعالی در سرور وجود ندارد ولی کلاینت پچ نصب کرده دارد (رول‌بک به نسخه پایه)
+            if current_patch:
+                return {
+                    "has_update": True,
+                    "action": "rollback",
+                    "should_rollback": True,
+                    "message": "پچ‌های فعال آرشیو شده‌اند؛ بازگشت به نسخه پایه."
+                }
             return {
                 "has_update": False,
                 "message": "کلاینت به آخرین نسخه مجهز است و پچ فعال یا فایل نصبی جدیدی وجود ندارد."
@@ -244,15 +257,16 @@ class PatchService:
                     "message": f"پچ جاری مخصوص بیلد نیتیو {active_patch.target_version_code} است (بیلد کلاینت: {client_vc})."
                 }
 
-        # بررسی تطابق با پچ جاری کلاینت بر اساس مقایسه ترتیبی نسخه‌ها
+        # بررسی تطابق با پچ جاری کلاینت
         if current_patch:
             curr_clean = str(current_patch).strip()
-            # اگر نسخه کلاینت برابر یا بالاتر از پچ فعال سرور باشد، نیازی به دریافت مجدد نیست
-            if compare_versions(active_patch.version, curr_clean) <= 0:
+            # فقط در صورتی که کلاینت دقیقاً همین پچ فعال را داشته باشد آپدیتی نیست:
+            if curr_clean == active_patch.version:
                 return {
                     "has_update": False,
                     "message": "کلاینت هم‌اکنون به آخرین نسخه پچ مجهز است.",
-                    "current_version": curr_clean
+                    "current_version": curr_clean,
+                    "release_notes": active_patch.release_notes
                 }
 
         patch_download_url = f"{url_scheme}://{server_host}/patches/{app.app_id}/{active_patch.version}/{active_patch.filename}"
