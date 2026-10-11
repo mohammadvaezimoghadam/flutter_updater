@@ -1,5 +1,7 @@
-# apps/ota/services.py
 from __future__ import annotations
+import json
+import hashlib
+# apps/ota/services.py
 
 import os
 import socket
@@ -10,7 +12,7 @@ from django.db import transaction
 from django.db.models import Count, Q
 from django.core.files.uploadedfile import UploadedFile
 
-from .models import App, Patch, Release
+from .models import App, Patch, Release, BaseRelease, PatchArtifact, TelemetryReport
 from .version_utils import validate_new_patch_version, compare_versions
 
 logger = logging.getLogger("ota.services")
@@ -418,6 +420,239 @@ class PatchService:
         return True
 
 
+    @staticmethod
+    def check_ota_v1(
+        app_id: str,
+        base_release: Optional[str] = None,
+        base_version_name: Optional[str] = None,
+        base_build_number: Optional[int] = None,
+        abi: Optional[str] = None,
+        current_patch_version: Optional[str] = None,
+        channel: Optional[str] = "stable",
+        device_id: Optional[str] = None,
+        host: Optional[str] = None,
+        scheme: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        پیاده‌سازی استاندارد استعلام نسخه بر اساس معماری Shorebird-Grade (POST /api/v1/ota/check/)
+        - بررسی ایزوله‌سازی Base Release
+        - هدایت خودکار به استور در صورت قدیمی بودن بیلد (STORE_UPDATE_REQUIRED)
+        - توزیع پچ هماهنگ با معماری پردازنده (Multi-ABI Architecture)
+        """
+        server_host = host or "localhost:8080"
+        url_scheme = scheme or "http"
+        app = App.objects.filter(Q(app_id=app_id) | Q(package_name=app_id), is_active=True).first()
+
+        # استخراج شماره ساخت
+        build_num = None
+        if base_build_number is not None:
+            try:
+                build_num = int(base_build_number)
+            except (ValueError, TypeError):
+                pass
+
+        # ۱. یافتن یا مطابقت Base Release
+        base_rel = None
+        if base_release:
+            base_rel = BaseRelease.objects.filter(release_name=base_release.strip()).first()
+        if not base_rel and build_num is not None:
+            base_rel = BaseRelease.objects.filter(build_number=build_num).first()
+
+        # ۲. بررسی سناریوی STORE_UPDATE_REQUIRED
+        latest_base = BaseRelease.objects.filter(is_active=True).order_by('-build_number').first()
+        if latest_base and build_num is not None and build_num < latest_base.build_number:
+            logger.info(f"[OTA/v1] Client on older build ({build_num} < {latest_base.build_number}). Triggering STORE_UPDATE_REQUIRED.")
+            return {
+                "status": "STORE_UPDATE_REQUIRED",
+                "store": {
+                    "latest_version": latest_base.version_string,
+                    "store_url": latest_base.store_url,
+                    "web_url": latest_base.store_web_url,
+                    "is_mandatory": True,
+                    "message": f"نسخه جدید قرآن ({latest_base.version_string}) در کافه‌بازار منتشر شده است. لطفاً برنامه را به‌روزرسانی کنید."
+                }
+            }
+
+        # ۳. بررسی پچ برای این Base Release
+        query = Q(status='active')
+        if channel:
+            query &= (Q(channel=channel) | Q(channel='stable'))
+
+        patches_qs = Patch.objects.none()
+        if base_rel:
+            patches_qs = base_rel.patches.filter(query).order_by('-patch_number', '-id')
+        elif app and build_num is not None:
+            patches_qs = app.patches.filter(query, target_version_code=build_num).order_by('-id')
+
+        active_patch = patches_qs.first()
+        if not active_patch and app:
+            active_patch = app.active_patch
+
+        if not active_patch:
+            return {
+                "status": "UP_TO_DATE",
+                "message": "اپلیکیشن شما به‌روز است."
+            }
+
+        # ۴. بررسی تطابق با پچ نصب شده فعلی
+        if current_patch_version:
+            curr_clean = str(current_patch_version).strip()
+            if curr_clean == active_patch.version.strip():
+                return {
+                    "status": "UP_TO_DATE",
+                    "message": "اپلیکیشن شما مجهز به آخرین پچ است."
+                }
+
+        # ۵. انتخاب فایل هماهنگ با پردازنده کلاینت (ABI)
+        client_abi = (abi or '').strip().lower()
+        artifact = None
+        if active_patch.artifacts.exists():
+            if client_abi:
+                artifact = active_patch.artifacts.filter(abi=client_abi).first()
+            if not artifact:
+                artifact = active_patch.artifacts.filter(abi='multi').first() or active_patch.artifacts.first()
+
+        if artifact and artifact.file:
+            media_prefix = getattr(settings, 'MEDIA_URL', '/media/')
+            download_url = f"{url_scheme}://{server_host}{media_prefix}{artifact.file.name}"
+            md5_val = artifact.md5
+            size_val = artifact.file_size
+        else:
+            download_url = f"{url_scheme}://{server_host}/patches/{app.app_id if app else 'app'}/{active_patch.version}/{active_patch.filename}"
+            md5_val = active_patch.md5
+            size_val = active_patch.size_bytes
+
+        return {
+            "status": "PATCH_AVAILABLE",
+            "patch": {
+                "version": active_patch.version,
+                "download_url": download_url,
+                "md5": md5_val,
+                "size_bytes": size_val,
+                "is_mandatory": active_patch.is_mandatory or active_patch.is_force,
+                "change_log": active_patch.change_log or active_patch.release_notes or f"به‌روزرسانی پچ نسخه {active_patch.version}"
+            }
+        }
+
+    @staticmethod
+    def publish_patch_bundle(file_obj, channel: str = "stable") -> Patch:
+        """
+        پردازش خودکار فایل پکیج زیپ چندمعماری (Zero-Input Multi-ABI Upload)
+        - استخراج manifest.json
+        - ثبت BaseRelease و Patch
+        - تفکیک خودکار و ذخیره فایل‌های arm64-v8a و armeabi-v7a و x86_64
+        - محاسبه هش MD5 هر فایل به صورت خودکار
+        """
+        import zipfile
+        from django.core.files.base import ContentFile
+
+        if not zipfile.is_zipfile(file_obj):
+            raise ValueError("فایل ارسالی یک فایل زیپ معتبر نیست.")
+
+        file_obj.seek(0)
+        with zipfile.ZipFile(file_obj, 'r') as zf:
+            namelist = zf.namelist()
+            manifest = {}
+            if 'manifest.json' in namelist:
+                with zf.open('manifest.json') as mf:
+                    manifest = json.loads(mf.read().decode('utf-8'))
+
+            app_id = manifest.get('app_id', 'quran_tafakor')
+            version = manifest.get('version', '1.0.1')
+            base_rel_name = manifest.get('base_release', '1.0.1+2')
+            change_log = manifest.get('change_log', '')
+            patch_channel = manifest.get('channel', channel) or 'stable'
+
+            # استخراج شماره ساخت
+            build_num = 2
+            version_str = "1.0.1"
+            if '+' in base_rel_name:
+                parts = base_rel_name.split('+')
+                version_str = parts[0]
+                try:
+                    build_num = int(parts[1])
+                except ValueError:
+                    pass
+
+            app, _ = App.objects.get_or_create(
+                app_id=app_id,
+                defaults={"name": "قرآن و تفکر", "package_name": "com.qurantafakor.app"}
+            )
+
+            base_rel, _ = BaseRelease.objects.get_or_create(
+                release_name=base_rel_name,
+                defaults={
+                    "app": app,
+                    "build_number": build_num,
+                    "version_string": version_str,
+                    "is_active": True
+                }
+            )
+
+            # آرشیو پچ‌های قبلی همین کانال و بیس
+            Patch.objects.filter(base_release=base_rel, channel=patch_channel, status='active').update(status='archived')
+
+            patch, _ = Patch.objects.get_or_create(
+                app=app,
+                base_release=base_rel,
+                version=version,
+                defaults={
+                    "channel": patch_channel,
+                    "status": "active",
+                    "change_log": change_log,
+                    "release_notes": change_log,
+                    "target_version_code": build_num
+                }
+            )
+            patch.status = 'active'
+            patch.channel = patch_channel
+            patch.change_log = change_log
+            patch.release_notes = change_log
+            patch.save()
+
+            # بررسی و استخراج فایل‌های هر معماری
+            abis = ['arm64-v8a', 'armeabi-v7a', 'x86_64']
+            for abi in abis:
+                # الگوهای نام‌گذاری فایل درون زیپ
+                candidate_names = [f"{abi}/patch.zip", f"{abi}/libapp.so", f"{abi}.zip"]
+                matched_name = None
+                for c in candidate_names:
+                    if c in namelist:
+                        matched_name = c
+                        break
+
+                if matched_name:
+                    file_bytes = zf.read(matched_name)
+                    hasher = hashlib.md5()
+                    hasher.update(file_bytes)
+                    md5_val = hasher.hexdigest()
+                    size_val = len(file_bytes)
+
+                    artifact, _ = PatchArtifact.objects.get_or_create(
+                        patch=patch,
+                        abi=abi,
+                        defaults={"md5": md5_val, "file_size": size_val}
+                    )
+                    artifact.file.save(os.path.basename(matched_name), ContentFile(file_bytes), save=False)
+                    artifact.md5 = md5_val
+                    artifact.file_size = size_val
+                    artifact.save()
+                    logger.info(f"[OTA/Publish] Stored artifact {abi}: size={size_val}, md5={md5_val}")
+
+            return patch
+
+    @staticmethod
+    def record_telemetry(app_id: str, patch_version: str, event: str, duration_ms: Optional[int] = None, device_id: Optional[str] = None):
+        """ثبت گزارش رویداد تله‌متری OTA"""
+        return TelemetryReport.objects.create(
+            app_id=app_id,
+            patch_version=patch_version,
+            event=event,
+            duration_ms=duration_ms,
+            device_id=device_id or ""
+        )
+
+
 class SystemService:
     """اطلاعات سلامت سرور، پورت‌ها و آدرس‌های شناسایی‌شده شبکه"""
 
@@ -584,4 +819,3 @@ class ReleaseService:
         release.delete()
         logger.info(f"Deleted native release #{release_id} ({rel_ver}) for app {app_id}.")
         return True
-

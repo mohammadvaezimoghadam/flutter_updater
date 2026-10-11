@@ -1,5 +1,5 @@
 from django.contrib import admin
-from .models import App, Patch, Release
+from .models import App, Patch, Release, BaseRelease, PatchArtifact, TelemetryReport
 
 
 @admin.register(App)
@@ -18,29 +18,50 @@ class AppAdmin(admin.ModelAdmin):
     total_releases_badge.short_description = "کل نسخه‌های نصبی"
 
 
+@admin.register(BaseRelease)
+class BaseReleaseAdmin(admin.ModelAdmin):
+    list_display = ('release_name', 'version_string', 'build_number', 'is_active', 'store_url', 'created_at')
+    list_filter = ('is_active', 'app')
+    search_fields = ('release_name', 'version_string', 'build_number')
+    readonly_fields = ('created_at',)
+
+
+class PatchArtifactInline(admin.TabularInline):
+    model = PatchArtifact
+    extra = 0
+    readonly_fields = ('file_size', 'md5', 'download_count', 'created_at')
+
+
 @admin.register(Patch)
 class PatchAdmin(admin.ModelAdmin):
-    list_display = ('version', 'app', 'target_abi_badge', 'target_version_code', 'status', 'is_force', 'formatted_size', 'download_count', 'md5', 'created_at')
-    list_filter = ('app', 'target_abi', 'status', 'is_force')
-    search_fields = ('version', 'app__name', 'app__app_id', 'md5', 'release_notes')
+    list_display = ('version', 'base_release', 'channel', 'target_version_code', 'status', 'is_mandatory', 'formatted_size', 'download_count', 'created_at')
+    list_filter = ('channel', 'status', 'is_mandatory', 'is_force', 'app')
+    search_fields = ('version', 'base_release__release_name', 'md5', 'change_log', 'release_notes')
     readonly_fields = ('size_bytes', 'md5', 'sha256', 'download_count', 'created_at', 'updated_at')
+    inlines = [PatchArtifactInline]
     actions = ['activate_selected_patches']
-
-    def target_abi_badge(self, obj):
-        badge_map = {
-            'multi': '🌐 همه دستگاه‌ها (Multi)',
-            'arm64-v8a': '📱 گوشی واقعی (ARM64)',
-            'x86_64': '💻 امولاتور (x86_64)',
-            'armeabi-v7a': '📱 گوشی ۳۲بیتی (ARMv7)',
-        }
-        return badge_map.get(obj.target_abi, obj.target_abi)
-    target_abi_badge.short_description = "دستگاه هدف (ABI)"
 
     def activate_selected_patches(self, request, queryset):
         for patch in queryset:
             patch.activate_and_rollback()
         self.message_user(request, "پچ(های) انتخاب‌شده فعال شدند.")
     activate_selected_patches.short_description = "فعال‌سازی و رول‌بک به پچ‌های انتخاب‌شده"
+
+
+@admin.register(PatchArtifact)
+class PatchArtifactAdmin(admin.ModelAdmin):
+    list_display = ('patch', 'abi', 'file_size', 'md5', 'download_count', 'created_at')
+    list_filter = ('abi', 'patch__channel')
+    search_fields = ('patch__version', 'md5')
+    readonly_fields = ('created_at',)
+
+
+@admin.register(TelemetryReport)
+class TelemetryReportAdmin(admin.ModelAdmin):
+    list_display = ('app_id', 'patch_version', 'event', 'duration_ms', 'device_id', 'created_at')
+    list_filter = ('event', 'app_id', 'created_at')
+    search_fields = ('app_id', 'patch_version', 'device_id')
+    readonly_fields = ('created_at',)
 
 
 @admin.register(Release)
@@ -56,4 +77,3 @@ class ReleaseAdmin(admin.ModelAdmin):
             release.activate_and_rollback()
         self.message_user(request, "نسخه(های) انتخاب‌شده فعال شدند.")
     activate_selected_releases.short_description = "فعال‌سازی و رول‌بک به نسخه‌های انتخاب‌شده"
-

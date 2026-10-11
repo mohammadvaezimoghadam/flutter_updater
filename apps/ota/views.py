@@ -506,3 +506,111 @@ class DeleteReleaseAPIView(View):
             return JsonResponse({"ok": False, "error": str(e)}, status=400)
 
 
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class OtaCheckV1APIView(View):
+    """
+    اندپوینت استاندارد استعلام OTA کلاینت بر اساس معماری سیستم دیزاین
+    POST /api/v1/ota/check/
+    """
+
+    def post(self, request, *args, **kwargs):
+        try:
+            body = json.loads(request.body.decode('utf-8'))
+        except Exception:
+            body = request.POST.dict()
+
+        app_id = (body.get('app_id') or body.get('package_name') or 'quran_tafakor').strip()
+        base_release = body.get('base_release')
+        base_version_name = body.get('base_version_name')
+        base_build_number = body.get('base_build_number')
+        abi = body.get('abi')
+        current_patch_version = body.get('current_patch_version')
+        channel = body.get('channel') or 'stable'
+        device_id = body.get('device_id')
+
+        host = request.get_host()
+        scheme = "https" if request.is_secure() or request.headers.get("x-forwarded-proto") == "https" else "http"
+
+        print(f"[OTA/v1/Check] Request: app='{app_id}', base='{base_release}', build={base_build_number}, abi='{abi}', current_patch='{current_patch_version}', channel='{channel}'")
+
+        res_data = PatchService.check_ota_v1(
+            app_id=app_id,
+            base_release=base_release,
+            base_version_name=base_version_name,
+            base_build_number=base_build_number,
+            abi=abi,
+            current_patch_version=current_patch_version,
+            channel=channel,
+            device_id=device_id,
+            host=host,
+            scheme=scheme
+        )
+        print(f"[OTA/v1/Check] Response: status={res_data.get('status')}")
+        return JsonResponse(res_data)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class OtaReportV1APIView(View):
+    """
+    اندپوینت ثبت رویداد و تله‌متری کلاینت OTA
+    POST /api/v1/ota/report/
+    """
+
+    def post(self, request, *args, **kwargs):
+        try:
+            body = json.loads(request.body.decode('utf-8'))
+        except Exception:
+            body = request.POST.dict()
+
+        app_id = body.get('app_id') or 'quran_tafakor'
+        patch_version = body.get('patch_version') or ''
+        event = body.get('event') or 'UNKNOWN'
+        duration_ms = body.get('duration_ms')
+        device_id = body.get('device_id')
+
+        print(f"📊 [OTA/Report] app='{app_id}', patch='{patch_version}', event='{event}', duration={duration_ms}ms, device='{device_id}'")
+
+        try:
+            PatchService.record_telemetry(
+                app_id=app_id,
+                patch_version=patch_version,
+                event=event,
+                duration_ms=int(duration_ms) if duration_ms is not None else None,
+                device_id=device_id
+            )
+            return JsonResponse({"ok": True})
+        except Exception as e:
+            return JsonResponse({"ok": False, "error": str(e)}, status=500)
+
+
+@method_decorator(csrf_exempt, name='dispatch')
+class OtaPublishV1APIView(View):
+    """
+    اندپوینت انتشار اتوماتیک بسته پچ چندمعماری (CLI Tool Publish)
+    POST /api/v1/ota/publish/
+    """
+
+    def post(self, request, *args, **kwargs):
+        file_obj = request.FILES.get('file') or request.FILES.get('bundle')
+        channel = request.POST.get('channel', 'stable')
+
+        if not file_obj:
+            return JsonResponse({"ok": False, "error": "فایل بسته پچ (patch_bundle.zip) یافت نشد."}, status=400)
+
+        try:
+            patch = PatchService.publish_patch_bundle(file_obj, channel=channel)
+            artifacts_info = [
+                {"abi": a.abi, "md5": a.md5, "size_bytes": a.file_size}
+                for a in patch.artifacts.all()
+            ]
+            return JsonResponse({
+                "ok": True,
+                "version": patch.version,
+                "channel": patch.channel,
+                "base_release": patch.base_release.release_name if patch.base_release else None,
+                "artifacts": artifacts_info
+            })
+        except Exception as e:
+            return JsonResponse({"ok": False, "error": str(e)}, status=500)

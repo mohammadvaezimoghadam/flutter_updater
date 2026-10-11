@@ -1,6 +1,9 @@
 # apps/ota/urls.py
 from django.urls import path, re_path
 from .views import (
+    OtaCheckV1APIView,
+    OtaReportV1APIView,
+    OtaPublishV1APIView,
     DashboardView,
     StatusAPIView,
     AppsAPIView,
@@ -36,6 +39,10 @@ urlpatterns = [
     path('status', StatusAPIView.as_view(), name='status'),
 
     # اندپوینت‌های کلاینت فلاتر
+    # اندپوینت‌های استاندارد v1 سیستم دیزاین جدید (Shorebird-Grade)
+    path('api/v1/ota/check/', OtaCheckV1APIView.as_view(), name='api_v1_ota_check'),
+    path('api/v1/ota/report/', OtaReportV1APIView.as_view(), name='api_v1_ota_report'),
+    path('api/v1/ota/publish/', OtaPublishV1APIView.as_view(), name='api_v1_ota_publish'),
     path('check', CheckUpdateAPIView.as_view(), name='check_update'),
     re_path(r'^patches/(?P<rel_path>.*)$', DownloadPatchView.as_view(), name='download_patch'),
     re_path(r'^releases/(?P<rel_path>.*)$', DownloadReleaseView.as_view(), name='download_release'),
