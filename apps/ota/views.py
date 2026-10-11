@@ -198,6 +198,7 @@ class UploadPatchAPIView(View):
         if not version:
             return JsonResponse({"ok": False, "error": "شماره نسخه پچ الزامی است."}, status=400)
         target_version_code = request.POST.get('target_version_code') or request.GET.get('target_version_code', 1)
+        target_abi = (request.POST.get('target_abi') or request.GET.get('target_abi') or 'multi').strip()
         is_force = (request.POST.get('is_force') or request.GET.get('is_force', '0')) in ['1', 'true', True]
         activate = (request.POST.get('activate') or request.GET.get('activate', '1')) in ['1', 'true', True]
         release_notes = request.POST.get('notes') or request.GET.get('notes', '')
@@ -227,6 +228,7 @@ class UploadPatchAPIView(View):
                 file_obj=file_obj,
                 version=version,
                 target_version_code=int(target_version_code),
+                target_abi=target_abi,
                 is_force=is_force,
                 activate=activate,
                 release_notes=release_notes

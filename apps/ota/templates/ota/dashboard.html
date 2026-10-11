@@ -316,6 +316,7 @@
                 <tr class="bg-slate-50 text-slate-600 border-b border-slate-100">
                   <th class="py-2.5 px-3 font-bold">نسخه (SemVer)</th>
                   <th class="py-2.5 px-3 font-bold text-center">وضعیت</th>
+                  <th class="py-2.5 px-3 font-bold text-center">دستگاه / معماری</th>
                   <th class="py-2.5 px-3 font-bold text-center">سیاست دریافت</th>
                   <th class="py-2.5 px-3 font-bold text-center">بیلد تارگت (سایز)</th>
                   <th class="py-2.5 px-3 font-bold">تاریخ ثبت</th>
@@ -335,6 +336,17 @@
                       {% endif %}
                     </td>
                     <td class="py-2.5 px-3 text-center">
+                      {% if p.target_abi == 'arm64-v8a' %}
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 inline-flex items-center gap-1">📱 گوشی واقعی</span>
+                      {% elif p.target_abi == 'x86_64' %}
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 inline-flex items-center gap-1">💻 امولاتور</span>
+                      {% elif p.target_abi == 'armeabi-v7a' %}
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 inline-flex items-center gap-1">📱 ۳۲بیتی</span>
+                      {% else %}
+                        <span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">🌐 همه دستگاه‌ها</span>
+                      {% endif %}
+                    </td>
+                    <td class="py-2.5 px-3 text-center">
                       {% if p.is_force %}<span class="text-red-600 font-bold">اجباری</span>{% else %}<span class="text-slate-500">اختیاری</span>{% endif %}
                     </td>
                     <td class="py-2.5 px-3 text-center font-mono">{{ p.target_version_code }} ({{ p.formatted_size }})</td>
@@ -344,7 +356,7 @@
                   {% endfor %}
                 {% else %}
                 <tr>
-                  <td colspan="6" class="text-center py-6 text-slate-400">هنوز هیچ پچی برای این برنامه ثبت نشده است.</td>
+                  <td colspan="7" class="text-center py-6 text-slate-400">هنوز هیچ پچی برای این برنامه ثبت نشده است.</td>
                 </tr>
                 {% endif %}
               </tbody>
@@ -395,13 +407,24 @@
               </div>
             </div>
 
-            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label class="block text-xs font-bold text-slate-700 mb-1">دستگاه و معماری هدف (Target Device / ABI) *</label>
+                <select id="select-target-abi" class="w-full h-10 px-3 bg-white text-slate-900 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500 font-semibold">
+                  <option value="multi" selected>🌐 همه دستگاه‌ها (جامع / Multi-ABI)</option>
+                  <option value="arm64-v8a">📱 گوشی‌های واقعی (arm64-v8a)</option>
+                  <option value="x86_64">💻 شبیه‌ساز و امولاتور (x86_64)</option>
+                  <option value="armeabi-v7a">📱 گوشی‌های ۳۲بیتی قدیمی (armeabi-v7a)</option>
+                </select>
+                <span class="text-[10px] text-slate-400 mt-1 block">مشخص می‌کند پچ برای امولاتور سیستم است یا گوشی واقعی</span>
+              </div>
               <div>
                 <label class="block text-xs font-bold text-slate-700 mb-1">سیاست توزیع پچ (Policy)</label>
                 <select id="select-policy" class="w-full h-10 px-3 bg-white text-slate-900 text-xs rounded-lg border border-slate-200 focus:outline-none focus:border-blue-500 font-semibold">
                   <option value="optional" selected>اختیاری (اعمال در شروع بعدی اپلیکیشن)</option>
-                  <option value="force">اجباری (Force Update - الزام به دانلود و اعمال فوری)</option>
+                  <option value="force">اجباری (Force Update - الزام به دانلود فوری)</option>
                 </select>
+                <span class="text-[10px] text-slate-400 mt-1 block">پاپ‌آپ اجباری یا نوتیفیکیشن اختیاری</span>
               </div>
               <div class="flex items-center pt-5">
                 <label class="flex items-center gap-2 cursor-pointer select-none text-xs text-slate-700 font-bold">
@@ -463,6 +486,7 @@
                 <tr class="bg-slate-50 text-slate-700 font-bold border-b border-slate-200/80">
                   <th class="py-3 px-4 rounded-r-lg">نسخه و وضعیت</th>
                   <th class="py-3 px-3 text-center">مشخصات بیلد</th>
+                  <th class="py-3 px-3 text-center">دستگاه / معماری</th>
                   <th class="py-3 px-3 text-center">نوع آپدیت</th>
                   <th class="py-3 px-4">تاریخ ثبت و یادداشت</th>
                   <th class="py-3 px-4 text-left rounded-l-lg" dir="ltr">عملیات</th>
@@ -895,6 +919,21 @@
       nameEl.textContent = selectedFile.name;
       sizeEl.textContent = `سایز: ${(selectedFile.size / (1024 * 1024)).toFixed(2)} مگابایت`;
       badge.style.display = 'flex';
+
+      // تشخیص هوشمند نام فایل برای پیشنهاد خودکار دستگاه مقصد
+      const fname = selectedFile.name.toLowerCase();
+      const abiSelect = document.getElementById('select-target-abi');
+      if (abiSelect) {
+        if (fname.includes('x86_64') || fname.includes('emulator')) {
+          abiSelect.value = 'x86_64';
+        } else if (fname.includes('arm64')) {
+          abiSelect.value = 'arm64-v8a';
+        } else if (fname.includes('armeabi')) {
+          abiSelect.value = 'armeabi-v7a';
+        } else if (fname.includes('multi')) {
+          abiSelect.value = 'multi';
+        }
+      }
       showToast(`فایل ${selectedFile.name} با موفقیت انتخاب شد.`, 'success');
     }
 
@@ -1020,11 +1059,23 @@
       renderPatchesTable(filtered);
     }
 
+    function getAbiBadge(abi) {
+      if (abi === 'arm64-v8a') {
+        return `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-100 text-blue-800 border border-blue-200 inline-flex items-center gap-1">📱 گوشی واقعی (ARM64)</span>`;
+      } else if (abi === 'x86_64') {
+        return `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 inline-flex items-center gap-1">💻 امولاتور (x86_64)</span>`;
+      } else if (abi === 'armeabi-v7a') {
+        return `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-purple-100 text-purple-800 border border-purple-200 inline-flex items-center gap-1">📱 ۳۲بیتی (ARMv7)</span>`;
+      } else {
+        return `<span class="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200 inline-flex items-center gap-1">🌐 همه دستگاه‌ها (Multi)</span>`;
+      }
+    }
+
     function renderDashboardRecentTable(patches) {
       const tbody = document.getElementById('dashboard-recent-table');
       if (!tbody) return;
       if (!patches || patches.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-6 text-slate-400">هنوز هیچ پچی برای این برنامه ثبت نشده است.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-6 text-slate-400">هنوز هیچ پچی برای این برنامه ثبت نشده است.</td></tr>';
         return;
       }
       const recents = patches.slice(0, 5);
@@ -1042,6 +1093,7 @@
           <tr class="hover:bg-slate-50/70 transition-colors">
             <td class="py-2.5 px-3 font-mono font-bold text-blue-600" dir="ltr">v${p.version}</td>
             <td class="py-2.5 px-3 text-center">${statusBadge}</td>
+            <td class="py-2.5 px-3 text-center">${getAbiBadge(p.target_abi)}</td>
             <td class="py-2.5 px-3 text-center">${policyBadge}</td>
             <td class="py-2.5 px-3 text-center font-mono">${p.target_version_code} (${sizeKb} KB)</td>
             <td class="py-2.5 px-3 text-slate-500 whitespace-nowrap">${p.created_at}</td>
@@ -1056,7 +1108,7 @@
       if (!tbody) return;
 
       if (!patches || patches.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-slate-400">هیچ پچی یافت نشد. از تب «انتشار پچ جدید» اولین پچ را بارگذاری کنید.</td></tr>';
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-400">هیچ پچی یافت نشد. از تب «انتشار پچ جدید» اولین پچ را بارگذاری کنید.</td></tr>';
         return;
       }
 
@@ -1086,6 +1138,7 @@
               <span class="font-mono text-slate-800 font-bold">بیلد ${p.target_version_code}</span>
               <span class="text-slate-400 text-[11px] block font-mono" dir="ltr">${sizeKb} KB</span>
             </td>
+            <td class="py-3 px-3 text-center">${getAbiBadge(p.target_abi)}</td>
             <td class="py-3 px-3 text-center">${policyBadge}</td>
             <td class="py-3 px-4">
               <span class="text-slate-400 text-[11px] block">${p.created_at}</span>
@@ -1120,7 +1173,7 @@
     async function loadPatches() {
       const tbody = document.getElementById('patches-table-body');
       if (!currentAppId) {
-        if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-slate-400">ابتدا یک برنامه ثبت یا انتخاب کنید.</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-400">ابتدا یک برنامه ثبت یا انتخاب کنید.</td></tr>';
         renderDashboardRecentTable([]);
         const countEl = document.getElementById('table-patch-count');
         if (countEl) countEl.textContent = '0 نسخه ثبت‌شده';
@@ -1128,7 +1181,7 @@
         if (statCount) statCount.textContent = 0;
         return;
       }
-      if (tbody) tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-slate-400">در حال بارگذاری نسخه‌ها...</td></tr>';
+      if (tbody) tbody.innerHTML = '<tr><td colspan="6" class="text-center py-8 text-slate-400">در حال بارگذاری نسخه‌ها...</td></tr>';
 
       try {
         const res = await fetch(`${BASE_PATH}/api/patches?app_id=${currentAppId}`);
@@ -1210,6 +1263,7 @@
         const formData = new FormData();
         formData.append('file', selectedFile);
         formData.append('app_id', currentAppId);
+        formData.append('target_abi', document.getElementById('select-target-abi') ? document.getElementById('select-target-abi').value : 'multi');
         formData.append('version', version);
         formData.append('target_version_code', targetCode);
         formData.append('is_force', isForce ? '1' : '0');

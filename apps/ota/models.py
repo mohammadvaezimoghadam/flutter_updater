@@ -158,6 +158,22 @@ class Patch(models.Model):
         verbose_name="کد بیلد نیتیو تارگت (Target Build)",
         help_text="فقط کلاینت‌های با این شماره ساخت، پچ را دریافت می‌کنند"
     )
+
+    ABI_CHOICES = (
+        ('multi', 'همه دستگاه‌ها (جامع / Multi-ABI)'),
+        ('arm64-v8a', 'گوشی‌های واقعی (arm64-v8a)'),
+        ('x86_64', 'شبیه‌ساز و امولاتور (x86_64)'),
+        ('armeabi-v7a', 'گوشی‌های ۳۲ بیتی قدیمی (armeabi-v7a)'),
+    )
+
+    target_abi = models.CharField(
+        max_length=32,
+        choices=ABI_CHOICES,
+        default='multi',
+        db_index=True,
+        verbose_name="دستگاه و پردازنده هدف (ABI)",
+        help_text="مشخص می‌کند این پچ مخصوص کدام پردازنده یا همه دستگاه‌هاست"
+    )
     status = models.CharField(
         max_length=32,
         choices=STATUS_CHOICES,

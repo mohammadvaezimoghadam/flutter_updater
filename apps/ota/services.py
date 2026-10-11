@@ -160,6 +160,8 @@ class PatchService:
                 "app_id": p.app.app_id,
                 "version": p.version,
                 "target_version_code": p.target_version_code,
+                "target_abi": getattr(p, 'target_abi', 'multi'),
+                "target_abi_display": p.get_target_abi_display() if hasattr(p, 'get_target_abi_display') else 'همه دستگاه‌ها (Multi)',
                 "status": p.status,
                 "is_active": 1 if p.is_active else 0,
                 "is_force": 1 if p.is_force else 0,
@@ -180,6 +182,7 @@ class PatchService:
         app_id: str,
         version_code: Optional[int] = None,
         current_patch: Optional[str] = None,
+        abi: Optional[str] = None,
         host: Optional[str] = None,
         scheme: Optional[str] = None
     ) -> Dict[str, Any]:
@@ -230,8 +233,19 @@ class PatchService:
 
         # اولویت ۲: استعلام پچ دارت (OTA Hot Update)
         active_patch = None
-        if client_vc is not None:
+        client_abi = (abi or '').strip().lower() if abi else None
+        
+        # ۱. استعلام بر اساس کد بیلد و معماری دقیق کلاینت
+        if client_vc is not None and client_abi:
+            active_patch = app.patches.filter(status='active', target_version_code=client_vc, target_abi=client_abi).first()
+            if not active_patch:
+                active_patch = app.patches.filter(status='active', target_version_code=client_vc, target_abi='multi').first()
+        
+        # ۲. استعلام فقط بر اساس کد بیلد
+        if not active_patch and client_vc is not None:
             active_patch = app.patches.filter(status='active', target_version_code=client_vc).first()
+            
+        # ۳. پچ پیش‌فرض فعال برنامه
         if not active_patch:
             active_patch = app.active_patch
 
@@ -276,6 +290,7 @@ class PatchService:
             "app_id": app.app_id,
             "version": active_patch.version,
             "target_version_code": active_patch.target_version_code,
+            "target_abi": getattr(active_patch, 'target_abi', 'multi'),
             "download_url": patch_download_url,
             "is_force": active_patch.is_force,
             "size_bytes": active_patch.size_bytes,
@@ -293,6 +308,7 @@ class PatchService:
         file_obj: UploadedFile | Any,
         version: str,
         target_version_code: int = 1,
+        target_abi: str = "multi",
         is_force: bool = False,
         activate: bool = True,
         release_notes: str = "",
@@ -315,10 +331,22 @@ class PatchService:
             if activate:
                 Patch.objects.filter(app=app, status='active').update(status='archived')
 
+            # تشخیص یا تنظیم معماری هدف
+            filename_lower = (file_obj.name if hasattr(file_obj, 'name') else '').lower()
+            effective_abi = (target_abi or 'multi').strip().lower()
+            if effective_abi == 'multi' and filename_lower:
+                if 'x86_64' in filename_lower or 'emulator' in filename_lower:
+                    effective_abi = 'x86_64'
+                elif 'arm64' in filename_lower:
+                    effective_abi = 'arm64-v8a'
+                elif 'armeabi' in filename_lower:
+                    effective_abi = 'armeabi-v7a'
+
             patch = Patch(
                 app=app,
                 version=version,
                 target_version_code=int(target_version_code),
+                target_abi=effective_abi,
                 status='active' if activate else 'archived',
                 is_force=is_force,
                 release_notes=release_notes.strip(),

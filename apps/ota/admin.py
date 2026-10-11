@@ -20,11 +20,21 @@ class AppAdmin(admin.ModelAdmin):
 
 @admin.register(Patch)
 class PatchAdmin(admin.ModelAdmin):
-    list_display = ('version', 'app', 'target_version_code', 'status', 'is_force', 'formatted_size', 'download_count', 'md5', 'created_at')
-    list_filter = ('app', 'status', 'is_force')
+    list_display = ('version', 'app', 'target_abi_badge', 'target_version_code', 'status', 'is_force', 'formatted_size', 'download_count', 'md5', 'created_at')
+    list_filter = ('app', 'target_abi', 'status', 'is_force')
     search_fields = ('version', 'app__name', 'app__app_id', 'md5', 'release_notes')
     readonly_fields = ('size_bytes', 'md5', 'sha256', 'download_count', 'created_at', 'updated_at')
     actions = ['activate_selected_patches']
+
+    def target_abi_badge(self, obj):
+        badge_map = {
+            'multi': '🌐 همه دستگاه‌ها (Multi)',
+            'arm64-v8a': '📱 گوشی واقعی (ARM64)',
+            'x86_64': '💻 امولاتور (x86_64)',
+            'armeabi-v7a': '📱 گوشی ۳۲بیتی (ARMv7)',
+        }
+        return badge_map.get(obj.target_abi, obj.target_abi)
+    target_abi_badge.short_description = "دستگاه هدف (ABI)"
 
     def activate_selected_patches(self, request, queryset):
         for patch in queryset:
