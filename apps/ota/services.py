@@ -458,22 +458,7 @@ class PatchService:
         if not base_rel and build_num is not None:
             base_rel = BaseRelease.objects.filter(build_number=build_num).first()
 
-        # ۲. بررسی سناریوی STORE_UPDATE_REQUIRED
-        latest_base = BaseRelease.objects.filter(is_active=True).order_by('-build_number').first()
-        if latest_base and build_num is not None and build_num < latest_base.build_number:
-            logger.info(f"[OTA/v1] Client on older build ({build_num} < {latest_base.build_number}). Triggering STORE_UPDATE_REQUIRED.")
-            return {
-                "status": "STORE_UPDATE_REQUIRED",
-                "store": {
-                    "latest_version": latest_base.version_string,
-                    "store_url": latest_base.store_url,
-                    "web_url": latest_base.store_web_url,
-                    "is_mandatory": True,
-                    "message": f"نسخه جدید قرآن ({latest_base.version_string}) در کافه‌بازار منتشر شده است. لطفاً برنامه را به‌روزرسانی کنید."
-                }
-            }
-
-        # ۳. بررسی پچ برای این Base Release
+        # ۲. بررسی پچ سازگار با این Base Release (بر اساس اصل Base Release Isolation)
         query = Q(status='active')
         if channel:
             query &= (Q(channel=channel) | Q(channel='stable'))
@@ -485,10 +470,22 @@ class PatchService:
             patches_qs = app.patches.filter(query, target_version_code=build_num).order_by('-id')
 
         active_patch = patches_qs.first()
-        if not active_patch and app:
-            active_patch = app.active_patch
 
+        # ۳. در صورت نبود پچ فعال برای این بیلد، بررسی نیاز به ارتقای استور (STORE_UPDATE_REQUIRED)
         if not active_patch:
+            latest_base = BaseRelease.objects.filter(is_active=True).order_by('-build_number').first()
+            if latest_base and build_num is not None and build_num < latest_base.build_number:
+                logger.info(f"[OTA/v1] Client on older build ({build_num} < {latest_base.build_number}) with no active patch. Triggering STORE_UPDATE_REQUIRED.")
+                return {
+                    "status": "STORE_UPDATE_REQUIRED",
+                    "store": {
+                        "latest_version": latest_base.version_string,
+                        "store_url": latest_base.store_url,
+                        "web_url": latest_base.store_web_url,
+                        "is_mandatory": True,
+                        "message": f"نسخه جدید قرآن ({latest_base.version_string}) در کافه‌بازار منتشر شده است. لطفاً برنامه را به‌روزرسانی کنید."
+                    }
+                }
             return {
                 "status": "UP_TO_DATE",
                 "message": "اپلیکیشن شما به‌روز است."
