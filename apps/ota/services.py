@@ -522,11 +522,24 @@ class PatchService:
             md5_val = active_patch.md5
             size_val = active_patch.size_bytes
 
+        # محاسبه دقیق target_version_code بر اساس معماری پردازنده کلاینت و شماره بیلد نیتیو
+        effective_build = build_num or (base_rel.build_number if base_rel else 1)
+        if client_abi == 'arm64-v8a':
+            target_vc = 2000 + effective_build if effective_build < 1000 else effective_build
+        elif client_abi == 'armeabi-v7a':
+            target_vc = 1000 + effective_build if effective_build < 1000 else effective_build
+        elif client_abi == 'x86_64':
+            target_vc = effective_build if effective_build < 1000 else (effective_build % 1000)
+        else:
+            target_vc = active_patch.target_version_code or effective_build
+
         return {
             "status": "PATCH_AVAILABLE",
             "patch": {
                 "version": active_patch.version,
                 "download_url": download_url,
+                "target_version_code": target_vc,
+                "target_abi": client_abi or getattr(active_patch, 'target_abi', 'multi'),
                 "md5": md5_val,
                 "size_bytes": size_val,
                 "is_mandatory": active_patch.is_mandatory or active_patch.is_force,
@@ -559,13 +572,13 @@ class PatchService:
 
             app_id = manifest.get('app_id', 'quran_tafakor')
             version = manifest.get('version', '1.0.1')
-            base_rel_name = manifest.get('base_release', '1.0.1+2')
+            base_rel_name = manifest.get('base_release', '1.0.0+1')
             change_log = manifest.get('change_log', '')
             patch_channel = manifest.get('channel', channel) or 'stable'
 
             # استخراج شماره ساخت
-            build_num = 2
-            version_str = "1.0.1"
+            build_num = 1
+            version_str = "1.0.0"
             if '+' in base_rel_name:
                 parts = base_rel_name.split('+')
                 version_str = parts[0]
@@ -601,16 +614,20 @@ class PatchService:
                     "status": "active",
                     "change_log": change_log,
                     "release_notes": change_log,
-                    "target_version_code": build_num
+                    "target_version_code": build_num,
+                    "target_abi": "multi"
                 }
             )
             patch.status = 'active'
             patch.channel = patch_channel
+            patch.target_abi = 'multi'
+            patch.target_version_code = build_num
             patch.change_log = change_log
             patch.release_notes = change_log
             patch.save()
 
             # بررسی و استخراج فایل‌های هر معماری
+            primary_artifact = None
             abis = ['arm64-v8a', 'armeabi-v7a', 'x86_64']
             for abi in abis:
                 # الگوهای نام‌گذاری فایل درون زیپ
@@ -637,7 +654,17 @@ class PatchService:
                     artifact.md5 = md5_val
                     artifact.file_size = size_val
                     artifact.save()
+                    if not primary_artifact or abi == 'arm64-v8a':
+                        primary_artifact = artifact
                     logger.info(f"[OTA/Publish] Stored artifact {abi}: size={size_val}, md5={md5_val}")
+
+            # در صورت خالی بودن فایل اصلی پچ، ست کردن با فایل آرتیفکت اصلی برای فال‌بک مطمئن
+            if primary_artifact and primary_artifact.file:
+                patch.file = primary_artifact.file
+                patch.filename = os.path.basename(primary_artifact.file.name)
+                patch.md5 = primary_artifact.md5
+                patch.size_bytes = primary_artifact.file_size
+                patch.save(update_fields=['file', 'filename', 'md5', 'size_bytes'])
 
             return patch
 
