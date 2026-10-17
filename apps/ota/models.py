@@ -564,6 +564,34 @@ class Release(models.Model):
         self.status = 'active'
         self.save(update_fields=['status', 'updated_at'])
 
+    def save(self, *args, **kwargs):
+        if self.file and not self.filename:
+            self.filename = os.path.basename(self.file.name)
+        super().save(*args, **kwargs)
+        if self.file and (not self.md5 or self.size_bytes == 0):
+            try:
+                file_path = self.file.path
+                if os.path.exists(file_path):
+                    hasher_md5 = hashlib.md5()
+                    hasher_sha = hashlib.sha256()
+                    size = 0
+                    with open(file_path, 'rb') as f:
+                        for chunk in iter(lambda: f.read(65536), b''):
+                            hasher_md5.update(chunk)
+                            hasher_sha.update(chunk)
+                            size += len(chunk)
+                    self.md5 = hasher_md5.hexdigest()
+                    self.sha256 = hasher_sha.hexdigest()
+                    self.size_bytes = size
+                    Release.objects.filter(id=self.id).update(
+                        md5=self.md5,
+                        sha256=self.sha256,
+                        size_bytes=self.size_bytes,
+                        filename=os.path.basename(file_path)
+                    )
+            except Exception:
+                pass
+
 
 class TelemetryReport(models.Model):
     """ثبت لاگ و تله‌متری رویدادهای کلاینت OTA (POST /api/v1/ota/report/)"""

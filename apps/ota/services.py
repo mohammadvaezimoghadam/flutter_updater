@@ -458,7 +458,50 @@ class PatchService:
         if not base_rel and build_num is not None:
             base_rel = BaseRelease.objects.filter(build_number=build_num).first()
 
-        # ۲. بررسی پچ سازگار با این Base Release (بر اساس اصل Base Release Isolation)
+        # ۲. اولویت اول: بررسی وجود نسخه نصبی نیتیو جدیدتر (Direct APK یا Store Update)
+        active_release = app.active_release if app else Release.objects.filter(status='active').first()
+        latest_base = BaseRelease.objects.filter(is_active=True).order_by('-build_number').first()
+
+        target_build = None
+        if active_release:
+            target_build = active_release.version_code
+        elif latest_base:
+            target_build = latest_base.build_number
+
+        if build_num is not None and target_build is not None and build_num < target_build:
+            logger.info(f"[OTA/v1] Client on older build ({build_num} < {target_build}). Triggering native update.")
+            if active_release and active_release.file:
+                apk_url = f"{url_scheme}://{server_host}/releases/{app.app_id if app else 'app'}/{active_release.version_code}/{active_release.filename}"
+                return {
+                    "status": "PATCH_AVAILABLE",
+                    "update_type": "native",
+                    "has_update": True,
+                    "patch": {
+                        "version": active_release.version_name,
+                        "download_url": apk_url,
+                        "target_version_code": active_release.version_code,
+                        "is_mandatory": active_release.is_force,
+                        "is_force": active_release.is_force,
+                        "size_bytes": active_release.size_bytes,
+                        "md5": active_release.md5,
+                        "change_log": active_release.release_notes or f"نسخه جدید {active_release.version_name}",
+                        "release_notes": active_release.release_notes or f"نسخه جدید {active_release.version_name}",
+                        "update_type": "native"
+                    }
+                }
+            elif latest_base:
+                return {
+                    "status": "STORE_UPDATE_REQUIRED",
+                    "store": {
+                        "latest_version": latest_base.version_string,
+                        "store_url": latest_base.store_url,
+                        "web_url": latest_base.store_web_url,
+                        "is_mandatory": True,
+                        "message": f"نسخه جدید قرآن ({latest_base.version_string}) در کافه‌بازار منتشر شده است. لطفاً برنامه را به‌روزرسانی کنید."
+                    }
+                }
+
+        # ۳. اولویت دوم: بررسی پچ سازگار با این Base Release (بر اساس اصل Base Release Isolation)
         query = Q(status='active')
         if channel:
             query &= (Q(channel=channel) | Q(channel='stable'))
@@ -471,21 +514,8 @@ class PatchService:
 
         active_patch = patches_qs.first()
 
-        # ۳. در صورت نبود پچ فعال برای این بیلد، بررسی نیاز به ارتقای استور (STORE_UPDATE_REQUIRED)
+        # در صورت نبود پچ فعال برای این بیلد:
         if not active_patch:
-            latest_base = BaseRelease.objects.filter(is_active=True).order_by('-build_number').first()
-            if latest_base and build_num is not None and build_num < latest_base.build_number:
-                logger.info(f"[OTA/v1] Client on older build ({build_num} < {latest_base.build_number}) with no active patch. Triggering STORE_UPDATE_REQUIRED.")
-                return {
-                    "status": "STORE_UPDATE_REQUIRED",
-                    "store": {
-                        "latest_version": latest_base.version_string,
-                        "store_url": latest_base.store_url,
-                        "web_url": latest_base.store_web_url,
-                        "is_mandatory": True,
-                        "message": f"نسخه جدید قرآن ({latest_base.version_string}) در کافه‌بازار منتشر شده است. لطفاً برنامه را به‌روزرسانی کنید."
-                    }
-                }
             return {
                 "status": "UP_TO_DATE",
                 "message": "اپلیکیشن شما به‌روز است."
@@ -532,6 +562,8 @@ class PatchService:
 
         return {
             "status": "PATCH_AVAILABLE",
+            "update_type": "patch",
+            "has_update": True,
             "patch": {
                 "version": active_patch.version,
                 "download_url": download_url,
@@ -540,7 +572,10 @@ class PatchService:
                 "md5": md5_val,
                 "size_bytes": size_val,
                 "is_mandatory": active_patch.is_mandatory or active_patch.is_force,
-                "change_log": active_patch.change_log or active_patch.release_notes or f"به‌روزرسانی پچ نسخه {active_patch.version}"
+                "is_force": active_patch.is_mandatory or active_patch.is_force,
+                "change_log": active_patch.change_log or active_patch.release_notes or f"به‌روزرسانی پچ نسخه {active_patch.version}",
+                "release_notes": active_patch.release_notes or active_patch.change_log or f"به‌روزرسانی پچ نسخه {active_patch.version}",
+                "update_type": "patch"
             }
         }
 
@@ -764,17 +799,19 @@ class ReleaseService:
             raise ValueError("کد بیلد نیتیو (version_code) باید یک عدد معتبر باشد.")
 
         # اعتبارسنجی بزرگ‌تر بودن version_code نسبت به نسخه‌های قبلی همین اپ
-        existing = Release.objects.filter(app=app)
+        existing = Release.objects.filter(app=app, version_code__gt=vc)
         if existing.exists():
             max_vc = max(r.version_code for r in existing)
-            if vc <= max_vc:
-                raise ValueError(
-                    f"کد بیلد نیتیو جدید ({vc}) باید اکیداً بزرگ‌تر از آخرین نسخه ثبت‌شده ({max_vc}) باشد."
-                )
+            raise ValueError(
+                f"کد بیلد نیتیو جدید ({vc}) نمی‌تواند کمتر از بالاترین نسخه ثبت‌شده ({max_vc}) باشد."
+            )
 
         with transaction.atomic():
             if activate:
                 Release.objects.filter(app=app, status='active').update(status='archived')
+
+            # در صورتی که نسخه‌ای با همین شماره بیلد قبلاً ثبت شده باشد آرشیو می‌شود
+            Release.objects.filter(app=app, version_code=vc).update(status='archived')
 
             release = Release(
                 app=app,
@@ -788,6 +825,20 @@ class ReleaseService:
             release.file = file_obj
             release.filename = os.path.basename(file_obj.name) if hasattr(file_obj, 'name') else 'app-release.apk'
             release.save()
+
+            # همگام‌سازی خودکار با مدل BaseRelease برای معماری استاندارد شوربرد
+            base_rel_name = f"{version_name}+{vc}"
+            base_rel, _ = BaseRelease.objects.update_or_create(
+                release_name=base_rel_name,
+                defaults={
+                    'app': app,
+                    'build_number': vc,
+                    'version_string': version_name,
+                    'is_active': activate
+                }
+            )
+            if activate:
+                BaseRelease.objects.filter(app=app).exclude(id=base_rel.id).update(is_active=False)
 
             logger.info(f"Published Native Release #{release.id} (v{version_name}, Build {vc}) for app {app.app_id}.")
             return release
@@ -808,7 +859,20 @@ class ReleaseService:
         if not release:
             raise ValueError(f"نسخه شماره #{release_id} یافت نشد.")
 
-        release.activate_and_rollback()
+        with transaction.atomic():
+            release.activate_and_rollback()
+            base_rel_name = f"{release.version_name}+{release.version_code}"
+            base_rel, _ = BaseRelease.objects.update_or_create(
+                release_name=base_rel_name,
+                defaults={
+                    'app': app,
+                    'build_number': release.version_code,
+                    'version_string': release.version_name,
+                    'is_active': True
+                }
+            )
+            BaseRelease.objects.filter(app=app).exclude(id=base_rel.id).update(is_active=False)
+
         logger.info(f"Activated native release #{release_id} (Build {release.version_code}) for app '{app_id}'.")
         return True
 
