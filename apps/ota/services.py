@@ -451,16 +451,16 @@ class PatchService:
             except (ValueError, TypeError):
                 pass
 
-        # ۱. یافتن یا مطابقت Base Release
+        # ۱. یافتن یا مطابقت Base Release (ایزوله به ازای همین اپلیکیشن)
         base_rel = None
         if base_release:
-            base_rel = BaseRelease.objects.filter(release_name=base_release.strip()).first()
+            base_rel = BaseRelease.objects.filter(app=app, release_name=base_release.strip()).first() if app else BaseRelease.objects.filter(release_name=base_release.strip()).first()
         if not base_rel and build_num is not None:
-            base_rel = BaseRelease.objects.filter(build_number=build_num).first()
+            base_rel = BaseRelease.objects.filter(app=app, build_number=build_num).first() if app else BaseRelease.objects.filter(build_number=build_num).first()
 
         # ۲. اولویت اول: بررسی وجود نسخه نصبی نیتیو جدیدتر (Direct APK یا Store Update)
         active_release = app.active_release if app else Release.objects.filter(status='active').first()
-        latest_base = BaseRelease.objects.filter(is_active=True).order_by('-build_number').first()
+        latest_base = BaseRelease.objects.filter(app=app, is_active=True).order_by('-build_number').first() if app else BaseRelease.objects.filter(is_active=True).order_by('-build_number').first()
 
         target_build = None
         if active_release:
@@ -852,6 +852,11 @@ class ReleaseService:
         if release_id == 0:
             with transaction.atomic():
                 Release.objects.filter(app=app, status='active').update(status='archived')
+                remaining_base = BaseRelease.objects.filter(app=app).order_by('build_number').first()
+                if remaining_base:
+                    BaseRelease.objects.filter(app=app).exclude(id=remaining_base.id).update(is_active=False)
+                    remaining_base.is_active = True
+                    remaining_base.save(update_fields=['is_active'])
             logger.info(f"Deactivated all native releases for app '{app_id}'.")
             return True
 
@@ -893,17 +898,48 @@ class ReleaseService:
         if not release:
             raise ValueError(f"نسخه شماره #{release_id} یافت نشد.")
 
-        try:
-            if release.file and os.path.exists(release.file.path):
-                file_dir = os.path.dirname(release.file.path)
-                os.remove(release.file.path)
-                if os.path.exists(file_dir) and not os.listdir(file_dir):
-                    os.rmdir(file_dir)
-        except Exception as e:
-            logger.warning(f"Could not remove release file from disk: {e}")
+        app = release.app
+        vc = release.version_code
+        rel_ver = f"{release.version_name} (Build {vc})"
+        app_id = app.app_id
 
-        rel_ver = f"{release.version_name} (Build {release.version_code})"
-        app_id = release.app.app_id
-        release.delete()
-        logger.info(f"Deleted native release #{release_id} ({rel_ver}) for app {app_id}.")
+        with transaction.atomic():
+            # ۱. حذف فایل باینری از دیسک
+            try:
+                if release.file and os.path.exists(release.file.path):
+                    file_dir = os.path.dirname(release.file.path)
+                    os.remove(release.file.path)
+                    if os.path.exists(file_dir) and not os.listdir(file_dir):
+                        os.rmdir(file_dir)
+            except Exception as e:
+                logger.warning(f"Could not remove release file from disk: {e}")
+
+            # ۲. حذف رکورد ریلیز از دیتابیس
+            release.delete()
+
+            # ۳. همگام‌سازی و پاکسازی BaseRelease متناظر
+            base_rel = BaseRelease.objects.filter(app=app, build_number=vc).first()
+            if base_rel:
+                if not base_rel.patches.exists():
+                    base_rel.delete()
+                else:
+                    base_rel.is_active = False
+                    base_rel.save(update_fields=['is_active'])
+
+            # ۴. در صورت وجود نسخه قبلی، بالاترین نسخه پیشین را به عنوان نسخه فعال (active) بازگردانی کن
+            prev_release = Release.objects.filter(app=app).order_by('-version_code').first()
+            if prev_release:
+                prev_release.status = 'active'
+                prev_release.save(update_fields=['status', 'updated_at'])
+                BaseRelease.objects.filter(app=app, build_number=prev_release.version_code).update(is_active=True)
+                BaseRelease.objects.filter(app=app).exclude(build_number=prev_release.version_code).update(is_active=False)
+            else:
+                # اگر هیچ ریلیز نصبی دیگری نمانده، آخرین بیس رلیز باقی‌مانده را فعال کن
+                remaining_base = BaseRelease.objects.filter(app=app).order_by('-build_number').first()
+                if remaining_base:
+                    remaining_base.is_active = True
+                    remaining_base.save(update_fields=['is_active'])
+                    BaseRelease.objects.filter(app=app).exclude(id=remaining_base.id).update(is_active=False)
+
+        logger.info(f"Deleted native release #{release_id} ({rel_ver}) for app {app_id} and synchronized BaseRelease.")
         return True

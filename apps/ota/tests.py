@@ -232,3 +232,64 @@ class OtaLifecycleTests(TestCase):
         self.assertEqual(data["update_type"], "native")
         self.assertEqual(data["patch"]["version"], "1.0.1")
         self.assertEqual(data["patch"]["target_version_code"], 2)
+
+    def test_delete_release_cleans_up_baserelease_and_prevents_fake_store_update(self):
+        """
+        بررسی باگ گزارش شده:
+        اگر کاربر یک نسخه APK (مثلاً بیلد ۲) را آپلود کند و سپس آن را از پنل حذف کند،
+        رکورد متناظر BaseRelease باید حذف/غیرفعال شود تا کلاینت‌هایی که روی بیلد ۱ هستند
+        به اشتباه با دیالوگ اجباری کافه‌بازار (STORE_UPDATE_REQUIRED) مواجه نشوند.
+        """
+        # ایجاد بیس اولیه بیلد ۱
+        base_v1 = BaseRelease.objects.create(
+            app=self.app,
+            release_name="1.0.0+1",
+            build_number=1,
+            version_string="1.0.0",
+            is_active=True
+        )
+
+        # ۱. آپلود نسخه APK بیلد ۲
+        dummy_apk = SimpleUploadedFile("app-release.apk", b"PK test_apk_content", content_type="application/vnd.android.package-archive")
+        rel = ReleaseService.publish_release(
+            app_id="quran_tafakor",
+            file_obj=dummy_apk,
+            version_name="1.0.1",
+            version_code=2,
+            activate=True,
+            release_notes="نسخه تستی بیلد ۲"
+        )
+
+        # اطمینان از ساخت ریلیز و بیس‌ریلیز
+        self.assertEqual(self.app.active_release.id, rel.id)
+        base_v2 = BaseRelease.objects.filter(app=self.app, build_number=2).first()
+        self.assertIsNotNone(base_v2)
+        self.assertTrue(base_v2.is_active)
+
+        # ۲. کاربر متوجه اشتباه می‌شود و ریلیز را حذف می‌کند
+        ReleaseService.delete_release(rel.id)
+
+        # اطمینان از پاک شدن ریلیز از دیتابیس
+        self.assertIsNone(self.app.active_release)
+
+        # بررسی همگام‌سازی: رکورد BaseRelease بیلد ۲ باید پاک یا غیرفعال شده باشد
+        base_v2_after = BaseRelease.objects.filter(app=self.app, build_number=2).first()
+        if base_v2_after:
+            self.assertFalse(base_v2_after.is_active)
+
+        # بیس‌ریلیز بیلد ۱ باید مجدداً فعال باشد
+        base_v1.refresh_from_db()
+        self.assertTrue(base_v1.is_active)
+
+        # ۳. کلاینت روی بیلد ۱ استعلام می‌گیرد
+        res = PatchService.check_ota_v1(
+            app_id="quran_tafakor",
+            base_release="1.0.0+1",
+            base_build_number=1,
+            current_patch_version=""
+        )
+
+        # پاسخ نباید به هیچ وجه STORE_UPDATE_REQUIRED باشد
+        self.assertNotEqual(res["status"], "STORE_UPDATE_REQUIRED")
+        self.assertEqual(res["status"], "UP_TO_DATE")
+
